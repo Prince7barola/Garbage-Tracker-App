@@ -15,6 +15,7 @@ import '../widgets/custom_snackbar.dart';
 import '../widgets/fade_slide_entrance.dart';
 import '../utils/custom_notification.dart';
 import '../services/truck_assignment_service.dart';
+import '../services/service_area_service.dart';
 import '../api/api_service.dart';
 
 class ResidentTrackTruckScreen extends StatefulWidget {
@@ -28,6 +29,7 @@ class ResidentTrackTruckScreen extends StatefulWidget {
 
 class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> with TickerProviderStateMixin {
   final FirebaseDatabase _database = FirebaseDatabase.instance;
+  final ServiceAreaService _serviceAreaService = ServiceAreaService();
   MapboxMap? mapboxMap;
   List<Map<dynamic, dynamic>> _trucks = [];
   Map<String, dynamic> _allTrucksRegistry = {};
@@ -1023,6 +1025,9 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
 
           // 2. Corner Header (Top-Left)
           _buildCornerHeader(),
+
+          // 3. Purok Legend Card (Top-Right)
+          _buildPurokLegendCard(),
 
           // 3. Map Controls HUD (Bottom Left)
           _buildMapControls(bottom: 32),
@@ -2176,6 +2181,79 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(text, style: const TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _buildPurokLegendCard() {
+    return Positioned(
+      top: 24,
+      right: _isFleetPanelVisible ? 464 : 24,
+      child: PointerInterceptor(
+        child: Container(
+          width: 220,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 4))],
+            border: Border.all(color: Colors.grey.shade200, width: 1.2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Purok Boundaries", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFF1A1A1A))),
+              const SizedBox(height: 10),
+              _buildLegendItem("Purok 1", const Color(0xFFE53935)),
+              _buildLegendItem("Purok 2", const Color(0xFF1E88E5)),
+              _buildLegendItem("Purok 3", const Color(0xFFFB8C00)),
+              _buildLegendItem("Purok Paraiso", const Color(0xFF43A047)),
+              _buildLegendItem("Riverside", const Color(0xFF8E24AA)),
+              _buildLegendItem("Brixton Homes", const Color(0xFF00ACC1)),
+              _buildLegendItem("El Pueblo", const Color(0xFFE91E63)),
+              const Divider(height: 16),
+              const Text("Other Areas", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A))),
+              const SizedBox(height: 6),
+              _buildLegendItem("San Nicolas", const Color(0xFF78909C)),
+              const Divider(height: 16),
+              const Text("Route Legend", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A))),
+              const SizedBox(height: 6),
+              _buildRouteLegendItem("Actual Driver Route", Colors.green),
+              _buildRouteLegendItem("Optimized Route", Colors.blue),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(String label, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(width: 14, height: 14, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))),
+          const SizedBox(width: 8),
+          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF333333))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRouteLegendItem(String label, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 16,
+            height: 4,
+            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(width: 8),
+          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF333333))),
+        ],
+      ),
     );
   }
 
