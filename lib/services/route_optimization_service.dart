@@ -23,6 +23,8 @@ class RouteOptimizationService {
     required String sessionId,
     required double currentLat,
     required double currentLng,
+    double? startLat,
+    double? startLng,
     required List<Map<String, dynamic>> remainingPuroks,
     String? configHash,
   }) async {
@@ -32,6 +34,8 @@ class RouteOptimizationService {
     debugPrint("PLATFORM: ${kIsWeb ? 'WEB' : 'NATIVE'}");
     debugPrint("SESSION ID: $sessionId");
     debugPrint("CONFIG HASH: $configHash");
+    debugPrint("START POINT: ${startLat ?? currentLat}, ${startLng ?? currentLng}");
+    debugPrint("CURRENT GPS: $currentLat, $currentLng");
     debugPrint("PENDING STOP COUNT: ${remainingPuroks.length}");
 
     // Check cache to avoid redundant network requests if config & position haven't changed significantly (< 50 meters)
@@ -103,13 +107,15 @@ class RouteOptimizationService {
 
     Map<String, dynamic>? result;
 
-    // 1. Try Direct Mapbox first (Fast & Authoritative)
+    // 1. Try Direct Mapbox first (Fast & Authoritative) starting at the Driver's Start Point
     debugPrint("[ROUTING REQUEST] TRANSPORT: DIRECT_MAPBOX");
     try {
       final directResult = await _getOptimizedRouteDirectMapbox(
         sessionId: sessionId,
         currentLat: currentLat,
         currentLng: currentLng,
+        startLat: startLat,
+        startLng: startLng,
         validPuroks: validPuroks,
         configHash: configHash,
       ).timeout(const Duration(seconds: 10));
@@ -129,6 +135,8 @@ class RouteOptimizationService {
           sessionId: sessionId,
           currentLat: currentLat,
           currentLng: currentLng,
+          startLat: startLat,
+          startLng: startLng,
           remainingPuroks: validPuroks,
           configHash: configHash,
         ).timeout(const Duration(seconds: 3));
@@ -176,18 +184,23 @@ class RouteOptimizationService {
     required String sessionId,
     required double currentLat,
     required double currentLng,
+    double? startLat,
+    double? startLng,
     required List<Map<String, dynamic>> validPuroks,
     String? configHash,
   }) async {
     try {
-      List<List<double>> allCoords = [[currentLng, currentLat]];
+      final double effectiveStartLat = startLat ?? currentLat;
+      final double effectiveStartLng = startLng ?? currentLng;
+
+      List<List<double>> allCoords = [[effectiveStartLng, effectiveStartLat]];
       for (var p in validPuroks) {
         allCoords.add([(p['lng'] as num).toDouble(), (p['lat'] as num).toDouble()]);
       }
 
       String coordsString = allCoords.map((c) => "${c[0]},${c[1]}").join(";");
 
-      debugPrint("[ROUTING REQUEST] MATRIX URL & COORDS: $coordsString");
+      debugPrint("[ROUTING REQUEST] MATRIX URL & COORDS (Origin: Start Point): $coordsString");
       
       final String matrixUrl = "https://api.mapbox.com/directions-matrix/v1/mapbox/driving/$coordsString";
       
@@ -233,7 +246,7 @@ class RouteOptimizationService {
         });
       }
 
-      List<List<double>> routeWaypoints = [[currentLng, currentLat]];
+      List<List<double>> routeWaypoints = [[effectiveStartLng, effectiveStartLat]];
       for (var s in optimizedStops) {
         routeWaypoints.add([(s['longitude'] as num).toDouble(), (s['latitude'] as num).toDouble()]);
       }
@@ -284,8 +297,8 @@ class RouteOptimizationService {
       final Map<String, dynamic> optimizedData = {
         'generated_at': ServerValue.timestamp,
         'config_hash': configHash,
-        'start_lat': currentLat,
-        'start_lng': currentLng,
+        'start_lat': effectiveStartLat,
+        'start_lng': effectiveStartLng,
         'total_distance_km': totalDistanceKm,
         'estimated_duration_minutes': totalDurationMins,
         'estimated_completion': "${DateFormat('h:mm a').format(now.add(Duration(seconds: ((route['duration'] as num).toDouble()).toInt())))} (est)",
@@ -332,16 +345,21 @@ class RouteOptimizationService {
     required String sessionId,
     required double currentLat,
     required double currentLng,
+    double? startLat,
+    double? startLng,
     required List<Map<String, dynamic>> remainingPuroks,
     String? configHash,
   }) async {
     try {
+      final double effectiveStartLat = startLat ?? currentLat;
+      final double effectiveStartLng = startLng ?? currentLng;
+
       final String proxyUrl = "https://indigo-bear-885857.hostingersite.com/backend/route_optimization.php";
       final response = await _dio.post(
         proxyUrl,
         data: {
-          "driver_lat": currentLat,
-          "driver_lng": currentLng,
+          "driver_lat": effectiveStartLat,
+          "driver_lng": effectiveStartLng,
           "stops": remainingPuroks.map((p) => {
             "name": p['name'],
             "lat": (p['lat'] as num).toDouble(),
@@ -360,6 +378,8 @@ class RouteOptimizationService {
       if (response.statusCode == 200 && response.data != null && response.data['success'] == true) {
         final Map<String, dynamic> optimizedData = Map<String, dynamic>.from(response.data);
         optimizedData['config_hash'] = configHash;
+        optimizedData['start_lat'] = effectiveStartLat;
+        optimizedData['start_lng'] = effectiveStartLng;
         
         try {
           await _database.ref('driver_routes/$sessionId/optimized_route').set(optimizedData);

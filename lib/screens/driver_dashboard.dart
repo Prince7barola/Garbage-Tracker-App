@@ -4685,10 +4685,23 @@ class _DriverDashboardState extends State<DriverDashboard> with TickerProviderSt
       debugPrint("PROXY REQUEST START (sessionId: $_sessionId)");
       final currentConfigHash = _generatePurokConfigHash();
       
+      double? tripStartLat;
+      double? tripStartLng;
+      try {
+        final routeSnap = await _database.ref('driver_routes/$_sessionId').get();
+        if (routeSnap.exists && routeSnap.value != null) {
+          final rMap = routeSnap.value as Map;
+          tripStartLat = (rMap['start_lat'] as num?)?.toDouble();
+          tripStartLng = (rMap['start_lng'] as num?)?.toDouble();
+        }
+      } catch (_) {}
+
       final result = await _optimizationService.getOptimizedRoute(
         sessionId: _sessionId!,
         currentLat: targetPos.latitude,
         currentLng: targetPos.longitude,
+        startLat: tripStartLat ?? targetPos.latitude,
+        startLng: tripStartLng ?? targetPos.longitude,
         remainingPuroks: remaining,
         configHash: currentConfigHash, // Pass hash to be stored
       ).timeout(const Duration(seconds: 15), onTimeout: () {
