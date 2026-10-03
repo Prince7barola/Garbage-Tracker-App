@@ -15,7 +15,6 @@ import '../widgets/custom_snackbar.dart';
 import '../widgets/fade_slide_entrance.dart';
 import '../utils/custom_notification.dart';
 import '../services/truck_assignment_service.dart';
-import '../services/service_area_service.dart';
 import '../api/api_service.dart';
 
 class ResidentTrackTruckScreen extends StatefulWidget {
@@ -29,7 +28,6 @@ class ResidentTrackTruckScreen extends StatefulWidget {
 
 class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> with TickerProviderStateMixin {
   final FirebaseDatabase _database = FirebaseDatabase.instance;
-  final ServiceAreaService _serviceAreaService = ServiceAreaService();
   MapboxMap? mapboxMap;
   List<Map<dynamic, dynamic>> _trucks = [];
   Map<String, dynamic> _allTrucksRegistry = {};
@@ -639,174 +637,6 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
       marginLeft: 20.0,
     ));
 
-    await _updatePurokBoundaries();
-    _updateTruckMarkers();
-    _recenterToBalintawak();
-  }
-
-  Future<void> _updatePurokBoundaries() async {
-    if (mapboxMap == null) return;
-    try {
-      final style = mapboxMap!.style;
-      final String boundarySourceId = "purok-boundaries-source";
-      final areas = await _serviceAreaService.getAllServiceAreas();
-
-      final List<Map<String, dynamic>> features = [];
-      for (var area in areas) {
-        if (area.boundaryGeometry.isNotEmpty) {
-          List<List<double>> coords = List.from(area.boundaryGeometry);
-          if (coords.isNotEmpty && (coords.first[0] != coords.last[0] || coords.first[1] != coords.last[1])) {
-            coords.add([coords.first[0], coords.first[1]]);
-          }
-
-          features.add({
-            "type": "Feature",
-            "geometry": {
-              "type": "Polygon",
-              "coordinates": [coords]
-            },
-            "properties": {
-              "id": area.id,
-              "name": area.name.toUpperCase(),
-              "color": area.color
-            }
-          });
-        }
-      }
-
-      final featureCollection = {"type": "FeatureCollection", "features": features};
-
-      if (!(await style.styleSourceExists(boundarySourceId))) {
-        await style.addSource(GeoJsonSource(id: boundarySourceId, data: jsonEncode(featureCollection)));
-      } else {
-        await style.setStyleSourceProperty(boundarySourceId, "data", jsonEncode(featureCollection));
-      }
-
-      if (!(await style.styleLayerExists("purok-fill-layer"))) {
-        // 1. Fill Layer (Colored zones with ~28% opacity)
-        await style.addLayer(FillLayer(
-          id: "purok-fill-layer",
-          sourceId: boundarySourceId,
-          fillColor: Colors.blue.toARGB32(),
-          fillOpacity: 0.28,
-          fillSortKey: 1.0,
-        ));
-        await style.setStyleLayerProperty("purok-fill-layer", "fill-color", ["get", "color"]);
-
-        // 2. Line Layer (Closed boundary lines)
-        await style.addLayer(LineLayer(
-          id: "purok-line-layer",
-          sourceId: boundarySourceId,
-          lineColor: Colors.blue.toARGB32(),
-          lineWidth: 2.8,
-          lineOpacity: 0.9,
-          lineSortKey: 2.0,
-        ));
-        await style.setStyleLayerProperty("purok-line-layer", "line-color", ["get", "color"]);
-
-        // 3. Label Layer (Purok names at center)
-        await style.addLayer(SymbolLayer(
-          id: "purok-label-layer",
-          sourceId: boundarySourceId,
-          textSize: 13.0,
-          textColor: Colors.white.toARGB32(),
-          textHaloColor: Colors.black.toARGB32(),
-          textHaloWidth: 2.0,
-          textAnchor: TextAnchor.CENTER,
-          symbolSortKey: 3.0,
-          textAllowOverlap: true,
-          textIgnorePlacement: true,
-        ));
-        await style.setStyleLayerProperty("purok-label-layer", "text-field", ["get", "name"]);
-      }
-    } catch (e) {
-      debugPrint("Purok boundaries render error: $e");
-    }
-  }
-
-  Future<void> _updatePurokBoundaries() async {
-    if (mapboxMap == null) return;
-    try {
-      final style = mapboxMap!.style;
-      final String boundarySourceId = "purok-boundaries-source";
-      final areas = await _serviceAreaService.getAllServiceAreas();
-
-      final List<Map<String, dynamic>> features = [];
-      for (var area in areas) {
-        if (area.boundaryGeometry.isNotEmpty) {
-          List<List<double>> coords = List.from(area.boundaryGeometry);
-          if (coords.isNotEmpty && (coords.first[0] != coords.last[0] || coords.first[1] != coords.last[1])) {
-            coords.add([coords.first[0], coords.first[1]]);
-          }
-
-          features.add({
-            "type": "Feature",
-            "geometry": {
-              "type": "Polygon",
-              "coordinates": [coords]
-            },
-            "properties": {
-              "id": area.id,
-              "name": area.name.toUpperCase(),
-              "color": area.color
-            }
-          });
-        }
-      }
-
-      final featureCollection = {"type": "FeatureCollection", "features": features};
-
-      if (!(await style.styleSourceExists(boundarySourceId))) {
-        await style.addSource(GeoJsonSource(id: boundarySourceId, data: jsonEncode(featureCollection)));
-      } else {
-        await style.setStyleSourceProperty(boundarySourceId, "data", jsonEncode(featureCollection));
-      }
-
-      if (!(await style.styleLayerExists("purok-fill-layer"))) {
-        // 1. Fill Layer (Colored zones with ~25% opacity)
-        await style.addLayer(FillLayer(
-          id: "purok-fill-layer",
-          sourceId: boundarySourceId,
-          fillColor: Colors.blue.toARGB32(),
-          fillOpacity: 0.28,
-          fillSortKey: 1.0,
-        ));
-        await style.setStyleLayerProperty("purok-fill-layer", "fill-color", ["get", "color"]);
-
-        // 2. Line Layer (Closed boundary lines)
-        await style.addLayer(LineLayer(
-          id: "purok-line-layer",
-          sourceId: boundarySourceId,
-          lineColor: Colors.blue.toARGB32(),
-          lineWidth: 2.8,
-          lineOpacity: 0.9,
-          lineSortKey: 2.0,
-        ));
-        await style.setStyleLayerProperty("purok-line-layer", "line-color", ["get", "color"]);
-
-        // 3. Label Layer (Purok names at center)
-        await style.addLayer(SymbolLayer(
-          id: "purok-label-layer",
-          sourceId: boundarySourceId,
-          textSize: 13.0,
-          textColor: Colors.white.toARGB32(),
-          textHaloColor: Colors.black.toARGB32(),
-          textHaloWidth: 2.0,
-          textAnchor: TextAnchor.CENTER,
-          symbolSortKey: 3.0,
-          textAllowOverlap: true,
-          textIgnorePlacement: true,
-        ));
-        await style.setStyleLayerProperty("purok-label-layer", "text-field", ["get", "name"]);
-      }
-    } catch (e) {
-      debugPrint("Purok boundaries render error: $e");
-    }
-  }
-      marginTop: 200.0,
-      marginLeft: 20.0,
-    ));
-
     _updateTruckMarkers();
     _recenterToBalintawak();
   }
@@ -1105,9 +935,6 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
 
           // 2. Corner Header (Top-Left)
           _buildCornerHeader(),
-
-          // 3. Purok Legend Card (Top-Right)
-          _buildPurokLegendCard(),
 
           // 3. Map Controls HUD (Bottom Left)
           _buildMapControls(bottom: 32),
@@ -2261,79 +2088,6 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(text, style: const TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w600)),
-    );
-  }
-
-  Widget _buildPurokLegendCard() {
-    return Positioned(
-      top: 24,
-      right: _isFleetPanelVisible ? 464 : 24,
-      child: PointerInterceptor(
-        child: Container(
-          width: 220,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.95),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 4))],
-            border: Border.all(color: Colors.grey.shade200, width: 1.2),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("Purok Boundaries", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFF1A1A1A))),
-              const SizedBox(height: 10),
-              _buildLegendItem("Purok 1", const Color(0xFFE53935)),
-              _buildLegendItem("Purok 2", const Color(0xFF1E88E5)),
-              _buildLegendItem("Purok 3", const Color(0xFFFB8C00)),
-              _buildLegendItem("Purok Paraiso", const Color(0xFF43A047)),
-              _buildLegendItem("Riverside", const Color(0xFF8E24AA)),
-              _buildLegendItem("Brixton Homes", const Color(0xFF00ACC1)),
-              _buildLegendItem("El Pueblo", const Color(0xFFE91E63)),
-              const Divider(height: 16),
-              const Text("Other Areas", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A))),
-              const SizedBox(height: 6),
-              _buildLegendItem("San Nicolas", const Color(0xFF78909C)),
-              const Divider(height: 16),
-              const Text("Route Legend", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A))),
-              const SizedBox(height: 6),
-              _buildRouteLegendItem("Actual Driver Route", Colors.green),
-              _buildRouteLegendItem("Optimized Route", Colors.blue),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLegendItem(String label, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          Container(width: 14, height: 14, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF333333))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRouteLegendItem(String label, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          Container(
-            width: 16,
-            height: 4,
-            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
-          ),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF333333))),
-        ],
-      ),
     );
   }
 

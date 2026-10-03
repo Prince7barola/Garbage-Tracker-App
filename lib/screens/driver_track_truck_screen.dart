@@ -14,6 +14,7 @@ import '../utils/session_manager.dart';
 import '../models/user.dart';
 import '../widgets/fade_slide_entrance.dart';
 import '../services/truck_assignment_service.dart';
+import '../services/service_area_service.dart';
 
 class DriverTrackTruckScreen extends StatefulWidget {
   final bool isEmbedded;
@@ -62,6 +63,7 @@ class DriverTrackTruckScreen extends StatefulWidget {
 class _DriverTrackTruckScreenState extends State<DriverTrackTruckScreen> with TickerProviderStateMixin {
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   final FirebaseDatabase _database = FirebaseDatabase.instance;
+  final ServiceAreaService _serviceAreaService = ServiceAreaService();
 
 
   MapboxMap? mapboxMap;
@@ -582,6 +584,86 @@ class _DriverTrackTruckScreenState extends State<DriverTrackTruckScreen> with Ti
     )); 
   }
 
+  Future<void> _updatePurokBoundaries() async {
+    if (mapboxMap == null) return;
+    try {
+      final style = mapboxMap!.style;
+      final String boundarySourceId = "purok-boundaries-source";
+      final areas = await _serviceAreaService.getAllServiceAreas();
+
+      final List<Map<String, dynamic>> features = [];
+      for (var area in areas) {
+        if (area.boundaryGeometry.isNotEmpty) {
+          List<List<double>> coords = List.from(area.boundaryGeometry);
+          if (coords.isNotEmpty && (coords.first[0] != coords.last[0] || coords.first[1] != coords.last[1])) {
+            coords.add([coords.first[0], coords.first[1]]);
+          }
+
+          features.add({
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [coords]
+            },
+            "properties": {
+              "id": area.id,
+              "name": area.name.toUpperCase(),
+              "color": area.color
+            }
+          });
+        }
+      }
+
+      final featureCollection = {"type": "FeatureCollection", "features": features};
+
+      if (!(await style.styleSourceExists(boundarySourceId))) {
+        await style.addSource(GeoJsonSource(id: boundarySourceId, data: jsonEncode(featureCollection)));
+      } else {
+        await style.setStyleSourceProperty(boundarySourceId, "data", jsonEncode(featureCollection));
+      }
+
+      if (!(await style.styleLayerExists("purok-fill-layer"))) {
+        // 1. Fill Layer (Colored zones with ~28% opacity - bottom layer)
+        await style.addLayer(FillLayer(
+          id: "purok-fill-layer",
+          sourceId: boundarySourceId,
+          fillColor: Colors.blue.toARGB32(),
+          fillOpacity: 0.28,
+          fillSortKey: 1.0,
+        ));
+        await style.setStyleLayerProperty("purok-fill-layer", "fill-color", ["get", "color"]);
+
+        // 2. Line Layer (Closed boundary lines)
+        await style.addLayer(LineLayer(
+          id: "purok-line-layer",
+          sourceId: boundarySourceId,
+          lineColor: Colors.blue.toARGB32(),
+          lineWidth: 2.8,
+          lineOpacity: 0.9,
+          lineSortKey: 2.0,
+        ));
+        await style.setStyleLayerProperty("purok-line-layer", "line-color", ["get", "color"]);
+
+        // 3. Label Layer (Purok names at center)
+        await style.addLayer(SymbolLayer(
+          id: "purok-label-layer",
+          sourceId: boundarySourceId,
+          textSize: 13.0,
+          textColor: Colors.white.toARGB32(),
+          textHaloColor: Colors.black.toARGB32(),
+          textHaloWidth: 2.0,
+          textAnchor: TextAnchor.CENTER,
+          symbolSortKey: 3.0,
+          textAllowOverlap: true,
+          textIgnorePlacement: true,
+        ));
+        await style.setStyleLayerProperty("purok-label-layer", "text-field", ["get", "name"]);
+      }
+    } catch (e) {
+      debugPrint("Driver Map Purok boundaries render error: $e");
+    }
+  }
+
   void _onMapCreated(MapboxMap map) { mapboxMap = map; }
 
   void _onStyleLoaded(dynamic data) async {
@@ -598,6 +680,8 @@ class _DriverTrackTruckScreenState extends State<DriverTrackTruckScreen> with Ti
       center: Point(coordinates: _balintawakCenter),
       zoom: _getResponsiveZoom(context),
     ));
+
+    await _updatePurokBoundaries();
 
     try {
       await Future.delayed(const Duration(milliseconds: 800));
