@@ -602,8 +602,8 @@ class _DriverTrackTruckScreenState extends State<DriverTrackTruckScreen> with Ti
             "Longitude: ${area.longitude}\n"
             "Boundary: ${area.boundaryGeometry.isNotEmpty ? 'AVAILABLE' : 'MISSING'}");
 
-        if (isVerified && area.boundaryGeometry.isNotEmpty) {
-          List<List<double>> coords = List.from(area.boundaryGeometry);
+        if (isVerified) {
+          List<List<double>> coords = List.from(area.effectiveBoundary);
           if (coords.isNotEmpty && (coords.first[0] != coords.last[0] || coords.first[1] != coords.last[1])) {
             coords.add([coords.first[0], coords.first[1]]);
           }
@@ -620,9 +620,9 @@ class _DriverTrackTruckScreenState extends State<DriverTrackTruckScreen> with Ti
               "color": area.color.isNotEmpty ? area.color : '#00796B'
             }
           });
-          debugPrint("[DRIVER MAP - AREA RENDER]\n${area.name} → rendered");
+          debugPrint("[DRIVER MAP - AREA RENDER]\n${area.name} (Lat: ${area.latitude}, Lng: ${area.longitude}) → rendered");
         } else {
-          debugPrint("[DRIVER MAP - AREA SKIPPED]\n${area.name} → skipped (Unverified or missing boundary)");
+          debugPrint("[DRIVER MAP - AREA SKIPPED]\n${area.name} → skipped (Unverified)");
         }
       }
 
