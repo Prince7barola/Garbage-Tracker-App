@@ -101,6 +101,9 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
         final List phpLocations = response.data['locations'] as List;
         final Map<String, dynamic> phpMap = {};
         for (var loc in phpLocations) {
+          final String driverName = (loc['driver_name'] ?? loc['driverName'] ?? '').toString();
+          if (driverName.toLowerCase().contains("john driver")) continue;
+
           final String tid = (loc['truck_id'] ?? loc['truckId'] ?? '').toString().toUpperCase();
           if (tid.isNotEmpty) {
             phpMap[tid] = {
@@ -332,6 +335,9 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
         liveData: liveData,
         trucksRegistry: _allTrucksRegistry,
       );
+
+      final String driverNameLower = (resolved.driverName ?? liveData['driver_name'] ?? '').toString().toLowerCase();
+      if (driverNameLower.contains("john driver")) return;
 
       mergedList.add({
         ...Map<String, dynamic>.from(_allTrucksRegistry[tid] as Map? ?? _allTrucksRegistry[key] as Map? ?? {}),
