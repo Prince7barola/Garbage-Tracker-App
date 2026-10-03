@@ -2178,29 +2178,42 @@ class _DriverTrackTruckScreenState extends State<DriverTrackTruckScreen> with Ti
       top: 160, right: 16,
       child: Container(
         padding: const EdgeInsets.all(12),
+        constraints: const BoxConstraints(maxHeight: 500),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.9), 
+          color: Colors.white.withValues(alpha: 0.92), 
           borderRadius: BorderRadius.circular(20), 
           boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))]
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("TRAVELED ROUTE", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(height: 4),
-            _buildLegendItem(Colors.green, "Active Route"),
-            _buildLegendItem(Colors.yellow, "Idle"),
-            _buildLegendItem(Colors.pinkAccent, "Full"),
-            _buildLegendItem(Colors.black, "Finish"),
-            _buildLegendItem(Colors.blue, "Start Point"),
-            if (_optimizedRouteData != null) ...[
-              const Divider(height: 12),
-              const Text("PLANNED ROUTE", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("PUROK BOUNDARIES", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
               const SizedBox(height: 4),
-              _buildLegendItem(Colors.blueAccent, "AI-Optimized Route"),
+              _buildLegendItem(const Color(0xFFE53935), "Purok 1"),
+              _buildLegendItem(const Color(0xFF1E88E5), "Purok 2"),
+              _buildLegendItem(const Color(0xFFFB8C00), "Purok 3"),
+              _buildLegendItem(const Color(0xFF43A047), "Purok Paraiso"),
+              _buildLegendItem(const Color(0xFF8E24AA), "Riverside"),
+              _buildLegendItem(const Color(0xFF00ACC1), "Brixton Homes"),
+              _buildLegendItem(const Color(0xFFE91E63), "El Pueblo"),
+              const Divider(height: 12),
+              const Text("TRAVELED ROUTE", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+              const SizedBox(height: 4),
+              _buildLegendItem(Colors.green, "Active Route"),
+              _buildLegendItem(Colors.yellow, "Idle"),
+              _buildLegendItem(Colors.pinkAccent, "Full"),
+              _buildLegendItem(Colors.black, "Finish"),
+              _buildLegendItem(Colors.blue, "Start Point"),
+              if (_optimizedRouteData != null) ...[
+                const Divider(height: 12),
+                const Text("PLANNED ROUTE", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+                const SizedBox(height: 4),
+                _buildLegendItem(Colors.blueAccent, "AI-Optimized Route"),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
