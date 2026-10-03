@@ -9,8 +9,8 @@ class RouteOptimizationService {
   final String _mapboxToken = "pk.eyJ1IjoicHJpbmNlNjcwMyIsImEiOiJjbW9zeHB2ODIwNDFnMnRwdWxsam9sYWJmIn0.8DQhyf9Z9-yP8lCuP2WS3g";
   final FirebaseDatabase _database = FirebaseDatabase.instance;
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
+    connectTimeout: const Duration(seconds: 8),
+    receiveTimeout: const Duration(seconds: 8),
   ));
 
   // In-memory route result cache for the current session
@@ -103,9 +103,27 @@ class RouteOptimizationService {
 
     Map<String, dynamic>? result;
 
-    // WEB PROXY LOGIC (With direct Mapbox fallback)
-    if (kIsWeb) {
-      debugPrint("[ROUTING REQUEST] TRANSPORT: HOSTINGER_PROXY_WITH_FALLBACK");
+    // 1. Try Direct Mapbox first (Fast & Authoritative)
+    debugPrint("[ROUTING REQUEST] TRANSPORT: DIRECT_MAPBOX");
+    try {
+      final directResult = await _getOptimizedRouteDirectMapbox(
+        sessionId: sessionId,
+        currentLat: currentLat,
+        currentLng: currentLng,
+        validPuroks: validPuroks,
+        configHash: configHash,
+      ).timeout(const Duration(seconds: 10));
+
+      if (directResult['success'] == true) {
+        result = directResult;
+      }
+    } catch (e) {
+      debugPrint("[DIRECT MAPBOX TIMEOUT/ERROR] $e. Trying proxy fallback...");
+    }
+
+    // 2. Fallback to Proxy if Direct Mapbox failed
+    if ((result == null || result['success'] != true) && kIsWeb) {
+      debugPrint("[ROUTING REQUEST] TRANSPORT: HOSTINGER_PROXY_FALLBACK");
       try {
         final proxyResult = await _getOptimizedRouteViaProxy(
           sessionId: sessionId,
@@ -113,34 +131,13 @@ class RouteOptimizationService {
           currentLng: currentLng,
           remainingPuroks: validPuroks,
           configHash: configHash,
-        ).timeout(const Duration(seconds: 12));
+        ).timeout(const Duration(seconds: 3));
 
         if (proxyResult != null && proxyResult['success'] == true) {
           result = proxyResult;
         }
       } catch (e) {
-        debugPrint("[ROUTING TIMEOUT/ERROR] Proxy timed out or failed: $e. Falling back to direct Mapbox.");
-      }
-    }
-
-    if (result == null || result['success'] != true) {
-      debugPrint("[ROUTING REQUEST] TRANSPORT: DIRECT_MAPBOX");
-      try {
-        result = await _getOptimizedRouteDirectMapbox(
-          sessionId: sessionId,
-          currentLat: currentLat,
-          currentLng: currentLng,
-          validPuroks: validPuroks,
-          configHash: configHash,
-        ).timeout(const Duration(seconds: 12));
-      } catch (e) {
-        swRoute.stop();
-        debugPrint("[ROUTE OPTIMIZATION TIMEOUT] Direct Mapbox request timed out: $e");
-        return {
-          'success': false,
-          'error': 'TIMEOUT',
-          'message': 'Route optimization request timed out. Please check your network connection and retry.'
-        };
+        debugPrint("[PROXY FALLBACK FAILED] $e");
       }
     }
 
@@ -344,6 +341,12 @@ class RouteOptimizationService {
         proxyUrl,
         data: {
           "driver_lat": currentLat,
+          "driver_lng": currentLng,
+          "stops": remainingPuroks.map((p) => {
+            "name": p['name'],
+            "lat": (p['lat'] as num).toDouble(),
+            "lng": (p['lng'] as num).toDouble(),
+          }).toList()
         },
         options: Options(
           headers: {
