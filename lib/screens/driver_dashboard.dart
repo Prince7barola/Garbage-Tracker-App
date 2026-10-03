@@ -4615,9 +4615,14 @@ class _DriverDashboardState extends State<DriverDashboard> with TickerProviderSt
         if (!isCompleted) {
           if (hasValidCoords) {
             remaining.add({
+              'id': areaId,
               'name': area['name'],
               'lat': lat,
               'lng': lng,
+              'latitude': lat,
+              'longitude': lng,
+              'isTruckStop': area['isTruckStop'] ?? true,
+              'verificationStatus': area['verificationStatus'] ?? 'VERIFIED',
             });
           } else {
             missingCoords.add(area['name']);
