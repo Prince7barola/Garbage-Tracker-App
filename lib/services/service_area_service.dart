@@ -42,21 +42,6 @@ class ServiceArea {
     this.color = '#00796B',
   });
 
-  List<List<double>> get effectiveBoundary {
-    if (boundaryGeometry.isNotEmpty) {
-      return boundaryGeometry;
-    }
-    const double dLng = 0.0028;
-    const double dLat = 0.0020;
-    return [
-      [longitude - dLng, latitude + dLat],
-      [longitude + dLng, latitude + dLat],
-      [longitude + dLng, latitude - dLat],
-      [longitude - dLng, latitude - dLat],
-      [longitude - dLng, latitude + dLat],
-    ];
-  }
-
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
