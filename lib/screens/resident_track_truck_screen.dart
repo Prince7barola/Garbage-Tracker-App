@@ -682,20 +682,22 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
         await style.addLayer(FillLayer(
           id: "purok-fill-layer",
           sourceId: boundarySourceId,
-          fillColor: ["get", "color"],
+          fillColor: Colors.blue.toARGB32(),
           fillOpacity: 0.25,
           fillSortKey: 1.0,
         ));
+        await style.setStyleLayerProperty("purok-fill-layer", "fill-color", ["get", "color"]);
 
         // 2. Line Layer (Closed boundary lines)
         await style.addLayer(LineLayer(
           id: "purok-line-layer",
           sourceId: boundarySourceId,
-          lineColor: ["get", "color"],
+          lineColor: Colors.blue.toARGB32(),
           lineWidth: 2.5,
           lineOpacity: 0.85,
           lineSortKey: 2.0,
         ));
+        await style.setStyleLayerProperty("purok-line-layer", "line-color", ["get", "color"]);
 
         // 3. Label Layer (Purok names at center)
         await style.addLayer(SymbolLayer(
@@ -703,7 +705,7 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
           sourceId: boundarySourceId,
           textSize: 13.0,
           textColor: Colors.white.toARGB32(),
-          textHaloColor: ["get", "color"],
+          textHaloColor: Colors.blue.toARGB32(),
           textHaloWidth: 2.0,
           textAnchor: TextAnchor.CENTER,
           symbolSortKey: 5.0,
@@ -711,6 +713,7 @@ class _ResidentTrackTruckScreenState extends State<ResidentTrackTruckScreen> wit
           textIgnorePlacement: false,
         ));
         await style.setStyleLayerProperty("purok-label-layer", "text-field", ["get", "name"]);
+        await style.setStyleLayerProperty("purok-label-layer", "text-halo-color", ["get", "color"]);
       }
     } catch (e) {
       debugPrint("Purok boundaries render error: $e");
