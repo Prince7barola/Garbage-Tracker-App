@@ -593,7 +593,16 @@ class _DriverTrackTruckScreenState extends State<DriverTrackTruckScreen> with Ti
 
       final List<Map<String, dynamic>> features = [];
       for (var area in areas) {
-        if (area.boundaryGeometry.isNotEmpty) {
+        final bool isVerified = area.verificationStatus.toUpperCase() == 'VERIFIED';
+        debugPrint("[DRIVER MAP - VERIFIED AREAS]\n"
+            "Area ID: ${area.id}\n"
+            "Name: ${area.name}\n"
+            "Status: ${area.verificationStatus}\n"
+            "Latitude: ${area.latitude}\n"
+            "Longitude: ${area.longitude}\n"
+            "Boundary: ${area.boundaryGeometry.isNotEmpty ? 'AVAILABLE' : 'MISSING'}");
+
+        if (isVerified && area.boundaryGeometry.isNotEmpty) {
           List<List<double>> coords = List.from(area.boundaryGeometry);
           if (coords.isNotEmpty && (coords.first[0] != coords.last[0] || coords.first[1] != coords.last[1])) {
             coords.add([coords.first[0], coords.first[1]]);
@@ -608,9 +617,12 @@ class _DriverTrackTruckScreenState extends State<DriverTrackTruckScreen> with Ti
             "properties": {
               "id": area.id,
               "name": area.name.toUpperCase(),
-              "color": area.color
+              "color": area.color.isNotEmpty ? area.color : '#00796B'
             }
           });
+          debugPrint("[DRIVER MAP - AREA RENDER]\n${area.name} → rendered");
+        } else {
+          debugPrint("[DRIVER MAP - AREA SKIPPED]\n${area.name} → skipped (Unverified or missing boundary)");
         }
       }
 
