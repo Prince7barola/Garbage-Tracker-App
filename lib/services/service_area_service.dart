@@ -65,6 +65,15 @@ class ServiceArea {
     'color': color,
   };
 
+  static String _normalizeVerificationStatus(dynamic val) {
+    if (val == null) return 'VERIFIED'; // Default to verified if not explicitly unverified
+    if (val is bool) return val ? 'VERIFIED' : 'UNVERIFIED';
+    String str = val.toString().trim().toUpperCase();
+    if (str == 'VERIFIED' || str == 'TRUE' || str == '1' || str == 'YES') return 'VERIFIED';
+    if (str == 'UNVERIFIED' || str == 'FALSE' || str == '0' || str == 'NO') return 'UNVERIFIED';
+    return 'VERIFIED'; // Default robust fallback
+  }
+
   factory ServiceArea.fromJson(Map<dynamic, dynamic> json) {
     final double lat = ((json['latitude'] ?? json['lat'] ?? 0.0) as num).toDouble();
     final double lng = ((json['longitude'] ?? json['lng'] ?? 0.0) as num).toDouble();
@@ -80,11 +89,13 @@ class ServiceArea {
       }
     }
 
+    final rawVer = json['verificationStatus'] ?? json['verification_status'] ?? json['isVerified'] ?? json['verified'];
+
     return ServiceArea(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       type: json['type']?.toString() ?? 'Purok',
-      isTruckStop: json['isTruckStop'] == true || json['is_truck_stop'] == true,
+      isTruckStop: json['isTruckStop'] == true || json['is_truck_stop'] == true || json['isTruckStop'] == null,
       latitude: lat,
       longitude: lng,
       entranceLat: entLat,
@@ -92,7 +103,7 @@ class ServiceArea {
       endLat: json['endLat'] != null ? ((json['endLat'] as num).toDouble()) : null,
       endLng: json['endLng'] != null ? ((json['endLng'] as num).toDouble()) : null,
       radius: ((json['radius'] ?? 60.0) as num).toDouble(),
-      verificationStatus: json['verificationStatus']?.toString() ?? 'VERIFIED',
+      verificationStatus: _normalizeVerificationStatus(rawVer),
       coordinateSource: json['coordinateSource']?.toString() ?? 'Barangay Balintawak Official GIS',
       lastVerificationDate: json['lastVerificationDate']?.toString() ?? '2026-10-02',
       assignedTruckId: json['assignedTruckId']?.toString(),
@@ -327,18 +338,32 @@ class ServiceAreaService {
     await ensureInitialized();
     try {
       final snap = await _database.ref('puroks').get();
+      debugPrint("[DRIVER ROUTE OPTIMIZATION READ]\n"
+          "Database: Firebase Realtime Database\n"
+          "Path: puroks\n"
+          "Snapshot exists: ${snap.exists}");
       if (snap.exists && snap.value != null) {
         final Map data = snap.value as Map;
         final List<ServiceArea> list = [];
+        List<String> ids = [];
+        List<String> names = [];
+        List<String> statuses = [];
+
         data.forEach((key, value) {
           if (value is Map) {
             final areaMap = Map<String, dynamic>.from(value);
             if (!areaMap.containsKey('id') || areaMap['id'] == null || areaMap['id'].toString().isEmpty) {
               areaMap['id'] = key.toString();
             }
-            list.add(ServiceArea.fromJson(areaMap));
+            final area = ServiceArea.fromJson(areaMap);
+            list.add(area);
+            ids.add(area.id);
+            names.add(area.name);
+            statuses.add("${area.name}:${area.verificationStatus}");
           }
         });
+
+        debugPrint("[DRIVER ROUTE OPTIMIZATION READ] Records found: ${list.length}, Area IDs: ${ids.join(', ')}, Area Names: ${names.join(', ')}, Verification Statuses: ${statuses.join(', ')}");
         return list;
       }
     } catch (e) {
@@ -369,9 +394,9 @@ class ServiceAreaService {
   Future<bool> saveServiceArea(ServiceArea area) async {
     final String key = area.id.isNotEmpty ? area.id : area.name.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_').toLowerCase();
 
-    debugPrint("[PUROK VERIFY SAVE START]\n"
-        "purokId: $key\n"
-        "purokName: ${area.name}\n"
+    debugPrint("[ADMIN VERIFY]\n"
+        "Area ID: $key\n"
+        "Area Name: ${area.name}\n"
         "newVerificationStatus: ${area.verificationStatus}\n"
         "databasePath/table: puroks/$key");
 
