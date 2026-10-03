@@ -300,12 +300,39 @@ class ServiceAreaService {
     'San Nicolas',
   ];
 
-  /// Ensures that 'puroks' in Firebase RTDB contains the canonical Balintawak service areas
+  /// Ensures that 'puroks' in Firebase RTDB contains the canonical Balintawak service areas and syncs coordinates
   Future<void> ensureInitialized() async {
     try {
       final snap = await _database.ref('puroks').get();
       if (!snap.exists || snap.value == null) {
         await resetToDefaultBalintawakAreas();
+      } else {
+        final Map data = snap.value as Map;
+        Map<String, dynamic> updates = {};
+        for (var defArea in defaultServiceAreas) {
+          if (!data.containsKey(defArea.id)) {
+            updates[defArea.id] = defArea.toJson();
+          } else {
+            final existing = data[defArea.id] as Map?;
+            if (existing != null) {
+              updates['${defArea.id}/latitude'] = defArea.latitude;
+              updates['${defArea.id}/longitude'] = defArea.longitude;
+              updates['${defArea.id}/lat'] = defArea.latitude;
+              updates['${defArea.id}/lng'] = defArea.longitude;
+              updates['${defArea.id}/entranceLat'] = defArea.entranceLat;
+              updates['${defArea.id}/entranceLng'] = defArea.entranceLng;
+              if (defArea.endLat != null) updates['${defArea.id}/endLat'] = defArea.endLat;
+              if (defArea.endLng != null) updates['${defArea.id}/endLng'] = defArea.endLng;
+              if (existing['verificationStatus'] == null) {
+                updates['${defArea.id}/verificationStatus'] = defArea.verificationStatus;
+              }
+            }
+          }
+        }
+        if (updates.isNotEmpty) {
+          await _database.ref('puroks').update(updates);
+          debugPrint("[SERVICE AREA] Synchronized ${updates.length} service area coordinate fields in Firebase RTDB.");
+        }
       }
     } catch (e) {
       debugPrint("[SERVICE AREA] Error ensuring service area initialization: $e");
