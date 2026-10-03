@@ -327,18 +327,32 @@ class ServiceAreaService {
     await ensureInitialized();
     try {
       final snap = await _database.ref('puroks').get();
+      debugPrint("[DRIVER ROUTE OPTIMIZATION READ]\n"
+          "Database: Firebase Realtime Database\n"
+          "Path: puroks\n"
+          "Snapshot exists: ${snap.exists}");
       if (snap.exists && snap.value != null) {
         final Map data = snap.value as Map;
         final List<ServiceArea> list = [];
+        List<String> ids = [];
+        List<String> names = [];
+        List<String> statuses = [];
+
         data.forEach((key, value) {
           if (value is Map) {
             final areaMap = Map<String, dynamic>.from(value);
             if (!areaMap.containsKey('id') || areaMap['id'] == null || areaMap['id'].toString().isEmpty) {
               areaMap['id'] = key.toString();
             }
-            list.add(ServiceArea.fromJson(areaMap));
+            final area = ServiceArea.fromJson(areaMap);
+            list.add(area);
+            ids.add(area.id);
+            names.add(area.name);
+            statuses.add("${area.name}:${area.verificationStatus}");
           }
         });
+
+        debugPrint("[DRIVER ROUTE OPTIMIZATION READ] Records found: ${list.length}, Area IDs: ${ids.join(', ')}, Area Names: ${names.join(', ')}, Verification Statuses: ${statuses.join(', ')}");
         return list;
       }
     } catch (e) {
@@ -369,9 +383,9 @@ class ServiceAreaService {
   Future<bool> saveServiceArea(ServiceArea area) async {
     final String key = area.id.isNotEmpty ? area.id : area.name.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_').toLowerCase();
 
-    debugPrint("[PUROK VERIFY SAVE START]\n"
-        "purokId: $key\n"
-        "purokName: ${area.name}\n"
+    debugPrint("[ADMIN VERIFY]\n"
+        "Area ID: $key\n"
+        "Area Name: ${area.name}\n"
         "newVerificationStatus: ${area.verificationStatus}\n"
         "databasePath/table: puroks/$key");
 

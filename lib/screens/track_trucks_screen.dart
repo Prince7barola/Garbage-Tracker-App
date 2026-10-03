@@ -13,6 +13,7 @@ import '../widgets/fade_slide_entrance.dart';
 import '../utils/custom_notification.dart';
 import '../utils/prediction_engine.dart';
 import '../services/truck_assignment_service.dart';
+import '../services/service_area_service.dart';
 import '../api/api_service.dart';
 
 class TrackTrucksScreen extends StatefulWidget {
@@ -676,10 +677,92 @@ class _TrackTrucksScreenState extends State<TrackTrucksScreen> with TickerProvid
       await mapboxMap?.location.updateSettings(LocationComponentSettings(enabled: false, pulsingEnabled: false));
       await mapboxMap?.compass.updateSettings(CompassSettings(position: OrnamentPosition.TOP_LEFT, marginTop: 200.0, marginLeft: 20.0));
     } catch (_) {}
+    await _updatePurokBoundaries();
     _updateTruckMarkers();
     
     // Always start initial map view centered on Barangay Balintawak, Lipa City, Batangas
     _recenterToBalintawak();
+  }
+
+  Future<void> _updatePurokBoundaries() async {
+    if (mapboxMap == null) return;
+    try {
+      final style = mapboxMap!.style;
+      final String boundarySourceId = "purok-boundaries-source";
+      final serviceAreaService = ServiceAreaService();
+      final areas = await serviceAreaService.getAllServiceAreas();
+
+      final List<Map<String, dynamic>> features = [];
+      for (var area in areas) {
+        if (area.boundaryGeometry.isNotEmpty) {
+          List<List<double>> coords = List.from(area.boundaryGeometry);
+          if (coords.isNotEmpty && (coords.first[0] != coords.last[0] || coords.first[1] != coords.last[1])) {
+            coords.add([coords.first[0], coords.first[1]]);
+          }
+
+          features.add({
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [coords]
+            },
+            "properties": {
+              "id": area.id,
+              "name": area.name.toUpperCase(),
+              "color": area.color
+            }
+          });
+        }
+      }
+
+      final featureCollection = {"type": "FeatureCollection", "features": features};
+
+      if (!(await style.styleSourceExists(boundarySourceId))) {
+        await style.addSource(GeoJsonSource(id: boundarySourceId, data: jsonEncode(featureCollection)));
+      } else {
+        await style.setStyleSourceProperty(boundarySourceId, "data", jsonEncode(featureCollection));
+      }
+
+      if (!(await style.styleLayerExists("purok-fill-layer"))) {
+        // 1. Fill Layer (Colored zones with ~25% opacity)
+        await style.addLayer(FillLayer(
+          id: "purok-fill-layer",
+          sourceId: boundarySourceId,
+          fillColor: Colors.blue.toARGB32(),
+          fillOpacity: 0.28,
+          fillSortKey: 1.0,
+        ));
+        await style.setStyleLayerProperty("purok-fill-layer", "fill-color", ["get", "color"]);
+
+        // 2. Line Layer (Closed boundary lines)
+        await style.addLayer(LineLayer(
+          id: "purok-line-layer",
+          sourceId: boundarySourceId,
+          lineColor: Colors.blue.toARGB32(),
+          lineWidth: 2.8,
+          lineOpacity: 0.9,
+          lineSortKey: 2.0,
+        ));
+        await style.setStyleLayerProperty("purok-line-layer", "line-color", ["get", "color"]);
+
+        // 3. Label Layer (Purok names at center)
+        await style.addLayer(SymbolLayer(
+          id: "purok-label-layer",
+          sourceId: boundarySourceId,
+          textSize: 13.0,
+          textColor: Colors.white.toARGB32(),
+          textHaloColor: Colors.black.toARGB32(),
+          textHaloWidth: 2.0,
+          textAnchor: TextAnchor.CENTER,
+          symbolSortKey: 3.0,
+          textAllowOverlap: true,
+          textIgnorePlacement: true,
+        ));
+        await style.setStyleLayerProperty("purok-label-layer", "text-field", ["get", "name"]);
+      }
+    } catch (e) {
+      debugPrint("Purok boundaries render error: $e");
+    }
   }
 
   bool _isUpdatingMarkers = false;
