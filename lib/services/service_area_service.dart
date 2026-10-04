@@ -112,6 +112,21 @@ class ServiceArea {
       color: json['color']?.toString() ?? '#00796B',
     );
   }
+
+  List<List<double>> get effectiveBoundary {
+    if (boundaryGeometry.isNotEmpty) {
+      return boundaryGeometry;
+    }
+    const double dLng = 0.0035;
+    const double dLat = 0.0025;
+    return [
+      [longitude - dLng, latitude + dLat],
+      [longitude + dLng, latitude + dLat],
+      [longitude + dLng, latitude - dLat],
+      [longitude - dLng, latitude - dLat],
+      [longitude - dLng, latitude + dLat],
+    ];
+  }
 }
 
 class ServiceAreaService {
@@ -142,7 +157,7 @@ class ServiceAreaService {
       coordinateSource: 'Barangay Balintawak Official GIS',
       lastVerificationDate: '2026-10-02',
     ),
-    // 2. Purok 2 (Blue) - Updated Coordinates
+    // 2. Purok 2 (Blue)
     ServiceArea(
       id: 'purok_2',
       name: 'Purok 2',
@@ -155,10 +170,17 @@ class ServiceAreaService {
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#1E88E5', // Blue
+      boundaryGeometry: [
+        [121.1514, 13.9644],
+        [121.1574, 13.9644],
+        [121.1574, 13.9584],
+        [121.1514, 13.9584],
+        [121.1514, 13.9644]
+      ],
       coordinateSource: 'Admin Verified (Updated)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 3. Purok 3 (Orange) - Updated Coordinates
+    // 3. Purok 3 (Orange)
     ServiceArea(
       id: 'purok_3',
       name: 'Purok 3',
@@ -171,30 +193,38 @@ class ServiceAreaService {
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#FB8C00', // Orange
+      boundaryGeometry: [
+        [121.1824, 13.9557],
+        [121.1884, 13.9557],
+        [121.1884, 13.9497],
+        [121.1824, 13.9497],
+        [121.1824, 13.9557]
+      ],
       coordinateSource: 'Admin Verified (Updated)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 4. Purok 4 / Sitio Pugon / Sitio Turibio (Yellow) - 4 Reference Landmarks
+    // 4. Purok 4 / El Pueblo Area (Yellow) - Updated Exact Points
     ServiceArea(
       id: 'purok_4',
-      name: 'Purok 4 (Sitio Pugon / Turibio)',
+      name: 'Purok 4 / El Pueblo',
       type: 'Purok',
       isTruckStop: true,
-      latitude: 13.96265,
-      longitude: 121.15160,
-      entranceLat: 13.96265,
-      entranceLng: 121.15160,
+      latitude: 13.9664847,
+      longitude: 121.1501235,
+      entranceLat: 13.965806837242551, // Point 1 Lat
+      entranceLng: 121.14839514570492, // Point 1 Lng
+      endLat: 13.967162634886991,     // Point 2 Lat
+      endLng: 121.15185195385844,     // Point 2 Lng
       radius: 70.0,
       verificationStatus: 'VERIFIED',
       color: '#FFD600', // Yellow
       boundaryGeometry: [
-        [121.1487, 13.9658], // Pueblo de Oro Courtyards Lipa
-        [121.1508, 13.9634], // JPFES Fire Extinguisher Trading
-        [121.1551, 13.9678], // JuanClick PC Solutions
-        [121.1518, 13.9536], // JR Lithium Battery Shop
-        [121.1487, 13.9658]  // Close polygon
+        [121.14839514570492, 13.965806837242551], // Point 1
+        [121.15185195385844, 13.967162634886991], // Point 2
+        [121.15185195385844, 13.965806837242551],
+        [121.14839514570492, 13.965806837242551]
       ],
-      coordinateSource: 'Admin Verified (4 Reference Landmarks)',
+      coordinateSource: 'Admin Verified (Updated Exact Points)',
       lastVerificationDate: '2026-10-02',
     ),
     // 5. Purok Paraiso (Green) - Updated Coordinates
@@ -210,6 +240,13 @@ class ServiceAreaService {
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#43A047', // Green
+      boundaryGeometry: [
+        [121.1532, 13.9496],
+        [121.1592, 13.9496],
+        [121.1592, 13.9436],
+        [121.1532, 13.9436],
+        [121.1532, 13.9496]
+      ],
       coordinateSource: 'Admin Verified (Updated)',
       lastVerificationDate: '2026-10-02',
     ),
@@ -226,6 +263,13 @@ class ServiceAreaService {
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#8E24AA', // Purple
+      boundaryGeometry: [
+        [121.1607, 13.9495],
+        [121.1667, 13.9495],
+        [121.1667, 13.9435],
+        [121.1607, 13.9435],
+        [121.1607, 13.9495]
+      ],
       coordinateSource: 'Admin Verified (Approximate Map Center)',
       lastVerificationDate: '2026-10-02',
     ),
@@ -242,6 +286,13 @@ class ServiceAreaService {
       radius: 65.0,
       verificationStatus: 'VERIFIED',
       color: '#00ACC1', // Teal
+      boundaryGeometry: [
+        [121.1537, 13.9581],
+        [121.1597, 13.9581],
+        [121.1597, 13.9521],
+        [121.1537, 13.9521],
+        [121.1537, 13.9581]
+      ],
       coordinateSource: 'Admin Verified (Accurate Location)',
       lastVerificationDate: '2026-10-02',
     ),
@@ -258,25 +309,32 @@ class ServiceAreaService {
       radius: 65.0,
       verificationStatus: 'VERIFIED',
       color: '#E91E63', // Pink
+      boundaryGeometry: [
+        [121.1558, 13.9455],
+        [121.1618, 13.9455],
+        [121.1618, 13.9395],
+        [121.1558, 13.9395],
+        [121.1558, 13.9455]
+      ],
       coordinateSource: 'Barangay Balintawak Official GIS',
       lastVerificationDate: '2026-10-02',
     ),
-    // 9. Ayala Highway Collection Segment (Road Segment)
+    // 9. Ayala Highway Collection Segment (Road Segment) - Updated Exact Endpoints
     ServiceArea(
       id: 'ayala_hwy_almaris_apat',
-      name: 'Ayala Highway (Fat Grill to Almarius Grill)',
+      name: 'Ayala Highway (Almarius to Fat Grill)',
       type: 'Highway Segment',
       isTruckStop: true,
-      latitude: 13.9515,
-      longitude: 121.16235,
-      entranceLat: 13.9558, // Fat Grill Start
-      entranceLng: 121.1614,
-      endLat: 13.9472,     // Almarius Grill and Resort End
-      endLng: 121.1633,
+      latitude: 13.949254869,
+      longitude: 121.158850046,
+      entranceLat: 13.952721960507304, // Start: Almarius Grill and Resort
+      entranceLng: 121.16270755525296,
+      endLat: 13.945787777551367,     // End: Fat Grill
+      endLng: 121.15499253664089,
       radius: 80.0,
       verificationStatus: 'VERIFIED',
       color: '#3949AB',
-      coordinateSource: 'Admin Verified (Road Segment Endpoints)',
+      coordinateSource: 'Admin Verified (Updated Exact Road Endpoints)',
       lastVerificationDate: '2026-10-02',
     ),
 
@@ -303,12 +361,12 @@ class ServiceAreaService {
     'Central (Purok 1)',
     'Purok 2',
     'Purok 3',
-    'Purok 4 (Sitio Pugon / Turibio)',
+    'Purok 4 / El Pueblo',
     'Purok Paraiso',
     'Riverside',
     'Brixton Homes',
     'El Pueblo',
-    'Ayala Highway (Fat Grill to Almarius Grill)',
+    'Ayala Highway (Almarius to Fat Grill)',
     'San Nicolas',
   ];
 
