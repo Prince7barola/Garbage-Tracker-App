@@ -249,9 +249,9 @@ class RouteOptimizationService {
         }
       }
 
-      // Solve TSP using 2-Opt Local Search on Road Network Durations Matrix
-      List<int> optimizedIndices = _solve2OptTSP(durationsMatrix);
-      debugPrint("[OPTIMIZED_ROUTE] Final Sequence Indices: ${optimizedIndices.join(' -> ')}");
+      // Solve TSP using Pure Nearest Neighbor for strict adjacent cluster progression
+      List<int> optimizedIndices = _solveNearestNeighborTour(durationsMatrix);
+      debugPrint("[OPTIMIZED_ROUTE] Final Pure Nearest Neighbor Sequence Indices: ${optimizedIndices.join(' -> ')}");
 
       List<Map<String, dynamic>> optimizedStops = [];
       for (int i = 0; i < optimizedIndices.length; i++) {
