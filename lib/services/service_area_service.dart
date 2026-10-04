@@ -282,7 +282,7 @@ class ServiceAreaService {
       latitude: 13.9551652,
       longitude: 121.1567505,
       entranceLat: 13.9551652,
-      entranceLng: 121.1567505,
+        entranceLng: 121.1567505,
       radius: 65.0,
       verificationStatus: 'VERIFIED',
       color: '#00ACC1', // Teal
@@ -296,7 +296,25 @@ class ServiceAreaService {
       coordinateSource: 'Admin Verified (Accurate Location)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 8. Ayala Highway Collection Segment (Road Segment) - Updated Exact Endpoints
+    // 8. T.M. Kalaw Street (Road Segment)
+    ServiceArea(
+      id: 'tm_kalaw_st',
+      name: 'T.M. Kalaw Street',
+      type: 'Road Segment',
+      isTruckStop: true,
+      latitude: 13.9425,
+      longitude: 121.1633,
+      entranceLat: 13.9425,
+      entranceLng: 121.1633,
+      endLat: 13.93600,
+      endLng: 121.15720,
+      radius: 70.0,
+      verificationStatus: 'VERIFIED',
+      color: '#00796B',
+      coordinateSource: 'Admin Verified (Road Segment Center)',
+      lastVerificationDate: '2026-10-02',
+    ),
+    // 9. Ayala Highway Collection Segment (Road Segment) - Updated Exact Endpoints
     ServiceArea(
       id: 'ayala_hwy_almaris_apat',
       name: 'Ayala Highway (Almarius to Fat Grill)',
@@ -342,6 +360,7 @@ class ServiceAreaService {
     'Purok Paraiso',
     'Riverside',
     'Brixton Homes',
+    'T.M. Kalaw Street',
     'Ayala Highway (Almarius to Fat Grill)',
     'San Nicolas',
   ];
