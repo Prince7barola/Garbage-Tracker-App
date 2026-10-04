@@ -34,8 +34,7 @@ class RouteOptimizationService {
     debugPrint("PLATFORM: ${kIsWeb ? 'WEB' : 'NATIVE'}");
     debugPrint("SESSION ID: $sessionId");
     debugPrint("CONFIG HASH: $configHash");
-    debugPrint("START POINT: ${startLat ?? currentLat}, ${startLng ?? currentLng}");
-    debugPrint("CURRENT GPS: $currentLat, $currentLng");
+    debugPrint("[ROUTE_OPTIMIZATION] Start: $startLat,$startLng (Current GPS: $currentLat,$currentLng)");
     debugPrint("PENDING STOP COUNT: ${remainingPuroks.length}");
 
     // Check cache to avoid redundant network requests if config & position haven't changed significantly (< 50 meters)
@@ -203,9 +202,56 @@ class RouteOptimizationService {
       final double effectiveStartLat = startLat ?? currentLat;
       final double effectiveStartLng = startLng ?? currentLng;
 
-      // Generate deterministic geographic corridor sequence (South to North starting from closest to start)
-      List<int> optimizedIndices = _solveGeographicCorridorSequence(validPuroks, effectiveStartLat, effectiveStartLng);
-      debugPrint("[OPTIMIZATION RESULT] GEOGRAPHIC CORRIDOR ORDER INDICES: ${optimizedIndices.join(' -> ')}");
+      List<List<double>> allCoords = [[effectiveStartLng, effectiveStartLat]];
+      for (var p in validPuroks) {
+        allCoords.add([(p['lng'] as num).toDouble(), (p['lat'] as num).toDouble()]);
+      }
+
+      String coordsString = allCoords.map((c) => "${c[0]},${c[1]}").join(";");
+
+      debugPrint("[ROUTING REQUEST] FULL MATRIX URL & COORDS: $coordsString");
+      
+      final String matrixUrl = "https://api.mapbox.com/directions-matrix/v1/mapbox/driving/$coordsString";
+      
+      // Omit sources parameter to get full N x N matrix for optimal 2-Opt TSP sequencing
+      final matrixResponse = await _dio.get(
+        matrixUrl, 
+        queryParameters: {
+          "access_token": _mapboxToken,
+          "annotations": "duration,distance",
+        },
+        options: Options(
+          headers: {'Accept': 'application/json'},
+          validateStatus: (status) => true,
+        ),
+      );
+
+      debugPrint("[ROUTING RESPONSE] MATRIX HTTP STATUS: ${matrixResponse.statusCode}");
+
+      if (matrixResponse.statusCode != 200 || matrixResponse.data == null || matrixResponse.data['code'] != 'Ok') {
+        String msg = matrixResponse.data?['message'] ?? 'Mapbox Matrix service returned status ${matrixResponse.statusCode}';
+        debugPrint("[ROUTE OPTIMIZATION ERROR] MATRIX MAPBOX ERROR: $msg");
+        return {
+          'success': false, 
+          'error': 'MATRIX_API_FAILED', 
+          'message': 'Routing Matrix API error: $msg'
+        };
+      }
+
+      final List durationsMatrix = matrixResponse.data['durations'];
+      
+      // Log individual route costs between points
+      for (int i = 0; i < durationsMatrix.length; i++) {
+        for (int j = 0; j < durationsMatrix[i].length; j++) {
+          if (i != j && durationsMatrix[i][j] != null) {
+            debugPrint("[ROUTE_COST] Node $i -> Node $j = ${((durationsMatrix[i][j] as num) / 60.0).toStringAsFixed(1)} min");
+          }
+        }
+      }
+
+      // Solve TSP using 2-Opt Local Search on Road Network Durations Matrix
+      List<int> optimizedIndices = _solve2OptTSP(durationsMatrix);
+      debugPrint("[OPTIMIZED_ROUTE] Final Sequence Indices: ${optimizedIndices.join(' -> ')}");
 
       List<Map<String, dynamic>> optimizedStops = [];
       for (int i = 0; i < optimizedIndices.length; i++) {
@@ -268,6 +314,9 @@ class RouteOptimizationService {
       final double totalDistanceKm = ((route['distance'] as num).toDouble()) / 1000.0;
       final int totalDurationMins = (((route['duration'] as num).toDouble()) / 60.0).round();
 
+      debugPrint("[TOTAL_DISTANCE] ${totalDistanceKm.toStringAsFixed(2)} km");
+      debugPrint("[TOTAL_TIME] $totalDurationMins minutes");
+
       final Map<String, dynamic> optimizedData = {
         'generated_at': ServerValue.timestamp,
         'config_hash': configHash,
@@ -305,37 +354,101 @@ class RouteOptimizationService {
     }
   }
 
-  /// Deterministic Geographic Corridor Sorting (South to North starting from closest to start)
-  List<int> _solveGeographicCorridorSequence(List<Map<String, dynamic>> validPuroks, double startLat, double startLng) {
-    if (validPuroks.isEmpty) return [];
+  /// Initial Nearest Neighbor tour generator
+  List<int> _solveNearestNeighborTour(List durationsMatrix) {
+    int numNodes = durationsMatrix.length;
+    Set<int> unvisited = Set.from(List.generate(numNodes - 1, (i) => i + 1));
+    List<int> tour = [];
+    int currentNode = 0; // Start at origin
 
-    // 1. Find the stop closest to the start location as Stop #1
-    int firstIndex = 0;
-    double minStartDist = double.infinity;
-    for (int i = 0; i < validPuroks.length; i++) {
-      double dist = Geolocator.distanceBetween(
-        startLat, startLng,
-        (validPuroks[i]['lat'] as num).toDouble(),
-        (validPuroks[i]['lng'] as num).toDouble(),
-      );
-      if (dist < minStartDist) {
-        minStartDist = dist;
-        firstIndex = i;
+    while (unvisited.isNotEmpty) {
+      int nearestNode = -1;
+      double minCost = double.infinity;
+
+      for (int nextNode in unvisited) {
+        double cost = 999999.0;
+        try {
+          if (durationsMatrix[currentNode] != null && durationsMatrix[currentNode][nextNode] != null) {
+            cost = (durationsMatrix[currentNode][nextNode] as num).toDouble();
+          }
+        } catch (_) {}
+
+        if (cost < minCost) {
+          minCost = cost;
+          nearestNode = nextNode;
+        }
+      }
+
+      if (nearestNode != -1) {
+        tour.add(nearestNode);
+        unvisited.remove(nearestNode);
+        currentNode = nearestNode;
+      } else {
+        int nextNode = unvisited.first;
+        tour.add(nextNode);
+        unvisited.remove(nextNode);
+        currentNode = nextNode;
       }
     }
 
-    List<int> indices = List.generate(validPuroks.length, (i) => i);
-    indices.remove(firstIndex);
+    return tour;
+  }
 
-    // 2. Sort remaining stops by latitude ascending (South to North progression)
-    indices.sort((a, b) => 
-      ((validPuroks[a]['lat'] as num).toDouble()).compareTo((validPuroks[b]['lat'] as num).toDouble())
-    );
+  /// 2-Opt Local Search TSP Optimization on Road Network Durations Matrix
+  List<int> _solve2OptTSP(List durationsMatrix) {
+    int numNodes = durationsMatrix.length;
+    if (numNodes <= 2) {
+      return List.generate(numNodes - 1, (i) => i + 1);
+    }
 
-    indices.insert(0, firstIndex);
+    List<int> tour = _solveNearestNeighborTour(durationsMatrix);
+    List<int> fullTour = [0, ...tour];
+    debugPrint("[INITIAL_ROUTE] NN Tour Indices: ${fullTour.join(' -> ')}");
 
-    // Convert to 1-based waypoint indices (0 is origin point, so indices are 1..N)
-    return indices.map((i) => i + 1).toList();
+    double calculateCost(List<int> t) {
+      double cost = 0.0;
+      for (int i = 0; i < t.length - 1; i++) {
+        int u = t[i];
+        int v = t[i + 1];
+        try {
+          cost += ((durationsMatrix[u][v] ?? 999999.0) as num).toDouble();
+        } catch (_) {
+          cost += 999999.0;
+        }
+      }
+      return cost;
+    }
+
+    double bestCost = calculateCost(fullTour);
+    bool improved = true;
+    int iterations = 0;
+    const int maxIterations = 100;
+
+    while (improved && iterations < maxIterations) {
+      improved = false;
+      iterations++;
+      for (int i = 1; i < fullTour.length - 2; i++) {
+        for (int j = i + 1; j < fullTour.length - 1; j++) {
+          List<int> newTour = List.from(fullTour);
+          List<int> sub = newTour.sublist(i, j + 1).reversed.toList();
+          for (int k = 0; k < sub.length; k++) {
+            newTour[i + k] = sub[k];
+          }
+
+          double newCost = calculateCost(newTour);
+          if (newCost < bestCost) {
+            fullTour = newTour;
+            bestCost = newCost;
+            improved = true;
+            break;
+          }
+        }
+        if (improved) break;
+      }
+    }
+
+    debugPrint("[OPTIMIZED_ROUTE] 2-Opt Tour Indices: ${fullTour.sublist(1).join(' -> ')} (Cost: $bestCost sec)");
+    return fullTour.sublist(1);
   }
 
   Future<Map<String, dynamic>?> _getOptimizedRouteViaProxy({
