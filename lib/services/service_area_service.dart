@@ -370,13 +370,10 @@ class ServiceAreaService {
     'San Nicolas',
   ];
 
-  /// Ensures that 'puroks' in Firebase RTDB contains the canonical Balintawak service areas
+  /// Ensures that 'puroks' in Firebase RTDB is updated with the latest authoritative Balintawak service areas
   Future<void> ensureInitialized() async {
     try {
-      final snap = await _database.ref('puroks').get();
-      if (!snap.exists || snap.value == null) {
-        await resetToDefaultBalintawakAreas();
-      }
+      await resetToDefaultBalintawakAreas();
     } catch (e) {
       debugPrint("[SERVICE AREA] Error ensuring service area initialization: $e");
     }
