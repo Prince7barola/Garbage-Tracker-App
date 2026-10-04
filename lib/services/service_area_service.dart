@@ -180,25 +180,25 @@ class ServiceAreaService {
       coordinateSource: 'Admin Verified (Updated)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 3. Purok 3 (Orange)
+    // 3. Purok 3 (Orange) - Updated Coordinates
     ServiceArea(
       id: 'purok_3',
       name: 'Purok 3',
       type: 'Purok',
       isTruckStop: true,
-      latitude: 13.952769235582661,
-      longitude: 121.18547696684433,
-      entranceLat: 13.952769235582661,
-      entranceLng: 121.18547696684433,
+      latitude: 13.96014078834871,
+      longitude: 121.1499563993106,
+      entranceLat: 13.96014078834871,
+      entranceLng: 121.1499563993106,
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#FB8C00', // Orange
       boundaryGeometry: [
-        [121.1824, 13.9557],
-        [121.1884, 13.9557],
-        [121.1884, 13.9497],
-        [121.1824, 13.9497],
-        [121.1824, 13.9557]
+        [121.1469, 13.9631],
+        [121.1529, 13.9631],
+        [121.1529, 13.9571],
+        [121.1469, 13.9571],
+        [121.1469, 13.9631]
       ],
       coordinateSource: 'Admin Verified (Updated)',
       lastVerificationDate: '2026-10-02',
