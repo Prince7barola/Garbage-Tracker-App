@@ -296,30 +296,7 @@ class ServiceAreaService {
       coordinateSource: 'Admin Verified (Accurate Location)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 8. El Pueblo (Pink)
-    ServiceArea(
-      id: 'el_pueblo',
-      name: 'El Pueblo',
-      type: 'Subdivision',
-      isTruckStop: true,
-      latitude: 13.94250,
-      longitude: 121.15880,
-      entranceLat: 13.94250,
-      entranceLng: 121.15880,
-      radius: 65.0,
-      verificationStatus: 'VERIFIED',
-      color: '#E91E63', // Pink
-      boundaryGeometry: [
-        [121.1558, 13.9455],
-        [121.1618, 13.9455],
-        [121.1618, 13.9395],
-        [121.1558, 13.9395],
-        [121.1558, 13.9455]
-      ],
-      coordinateSource: 'Barangay Balintawak Official GIS',
-      lastVerificationDate: '2026-10-02',
-    ),
-    // 9. Ayala Highway Collection Segment (Road Segment) - Updated Exact Endpoints
+    // 8. Ayala Highway Collection Segment (Road Segment) - Updated Exact Endpoints
     ServiceArea(
       id: 'ayala_hwy_almaris_apat',
       name: 'Ayala Highway (Almarius to Fat Grill)',
@@ -361,11 +338,10 @@ class ServiceAreaService {
     'Central (Purok 1)',
     'Purok 2',
     'Purok 3',
-    'Purok 4 / El Pueblo',
+    'Purok 4',
     'Purok Paraiso',
     'Riverside',
     'Brixton Homes',
-    'El Pueblo',
     'Ayala Highway (Almarius to Fat Grill)',
     'San Nicolas',
   ];
