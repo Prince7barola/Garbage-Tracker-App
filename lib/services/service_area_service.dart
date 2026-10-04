@@ -296,22 +296,22 @@ class ServiceAreaService {
       coordinateSource: 'Admin Verified (Accurate Location)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 8. T.M. Kalaw Street (Road Segment)
+    // 8. T.M. Kalaw Street (Road Segment) - Exact Start and Finish
     ServiceArea(
       id: 'tm_kalaw_st',
       name: 'T.M. Kalaw Street',
       type: 'Road Segment',
       isTruckStop: true,
-      latitude: 13.9425,
-      longitude: 121.1633,
-      entranceLat: 13.9425,
-      entranceLng: 121.1633,
-      endLat: 13.93600,
-      endLng: 121.15720,
+      latitude: 13.94631603964,
+      longitude: 121.1616625678,
+      entranceLat: 13.950966112751479, // Start
+      entranceLng: 121.1598175225124,
+      endLat: 13.941665966540967,     // Finish
+      endLng: 121.16350761310606,
       radius: 70.0,
       verificationStatus: 'VERIFIED',
       color: '#00796B',
-      coordinateSource: 'Admin Verified (Road Segment Center)',
+      coordinateSource: 'Admin Verified (Exact T.M. Kalaw Endpoints)',
       lastVerificationDate: '2026-10-02',
     ),
     // 9. Ayala Highway Collection Segment (Road Segment) - Updated Exact Endpoints
