@@ -57,15 +57,16 @@ class RouteOptimizationService {
       return {'success': false, 'error': 'NO_PENDING_STOPS', 'message': 'No verified pending collection areas found. (Note: Unverified Puroks are excluded until officially verified in Admin Settings).'};
     }
 
-    // Validate Coordinates & Collection Stop Type
+    // Validate Coordinates & Expand Road Segments (Start & End waypoints)
     List<Map<String, dynamic>> validPuroks = [];
-    List<String> rejectedReasons = [];
     int verifiedCount = 0;
     int rejectedCount = 0;
 
     for (var p in remainingPuroks) {
       final double lat = ((p['latitude'] ?? p['lat'] ?? 0.0) as num).toDouble();
       final double lng = ((p['longitude'] ?? p['lng'] ?? 0.0) as num).toDouble();
+      final double? endLat = p['endLat'] != null ? (p['endLat'] as num).toDouble() : null;
+      final double? endLng = p['endLng'] != null ? (p['endLng'] as num).toDouble() : null;
       final String name = (p['name'] ?? 'Unknown').toString();
       final bool isTruckStop = p['isTruckStop'] != false && p['is_truck_stop'] != false;
       final String verStatus = (p['verificationStatus'] ?? 'UNVERIFIED').toString().toUpperCase();
@@ -77,19 +78,28 @@ class RouteOptimizationService {
 
       if (reasons.isEmpty) {
         verifiedCount++;
+        // Add start/entrance point
         validPuroks.add({
-          'name': name,
+          'name': endLat != null ? "$name (Start)" : name,
           'lat': lat,
           'lng': lng,
         });
+
+        // If road segment has an end point, add it as well
+        if (endLat != null && endLng != null) {
+          validPuroks.add({
+            'name': "$name (End)",
+            'lat': endLat,
+            'lng': endLng,
+          });
+        }
       } else {
         rejectedCount++;
-        rejectedReasons.add("$name: ${reasons.join('; ')}");
       }
     }
 
     swLoad.stop();
-    debugPrint("[VERIFIED AREAS LOADED] Count: ${verifiedCount}, Rejected: ${rejectedCount} (Duration: ${swLoad.elapsedMilliseconds} ms)");
+    debugPrint("[VERIFIED AREAS LOADED] Count: ${verifiedCount}, Expanded Waypoints: ${validPuroks.length}, Rejected: ${rejectedCount} (Duration: ${swLoad.elapsedMilliseconds} ms)");
 
     if (validPuroks.isEmpty) {
       debugPrint("[ROUTE OPTIMIZATION ERROR] No verified valid Purok coordinates available for optimization.");
@@ -100,7 +110,7 @@ class RouteOptimizationService {
       };
     }
 
-    debugPrint("[VALID DESTINATIONS] Count: ${validPuroks.length}");
+    debugPrint("[VALID WAYPOINTS] Count: ${validPuroks.length}");
 
     debugPrint("[ROUTING REQUEST START]");
     final Stopwatch swRoute = Stopwatch()..start();
@@ -118,7 +128,7 @@ class RouteOptimizationService {
         startLng: startLng,
         validPuroks: validPuroks,
         configHash: configHash,
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 12));
 
       if (directResult['success'] == true) {
         result = directResult;
@@ -139,7 +149,7 @@ class RouteOptimizationService {
           startLng: startLng,
           remainingPuroks: validPuroks,
           configHash: configHash,
-        ).timeout(const Duration(seconds: 3));
+        ).timeout(const Duration(seconds: 4));
 
         if (proxyResult != null && proxyResult['success'] == true) {
           result = proxyResult;
@@ -200,16 +210,16 @@ class RouteOptimizationService {
 
       String coordsString = allCoords.map((c) => "${c[0]},${c[1]}").join(";");
 
-      debugPrint("[ROUTING REQUEST] MATRIX URL & COORDS (Origin: Start Point): $coordsString");
+      debugPrint("[ROUTING REQUEST] FULL MATRIX URL & COORDS: $coordsString");
       
       final String matrixUrl = "https://api.mapbox.com/directions-matrix/v1/mapbox/driving/$coordsString";
       
+      // Omit sources parameter to get full N x N matrix for optimal TSP sequencing
       final matrixResponse = await _dio.get(
         matrixUrl, 
         queryParameters: {
           "access_token": _mapboxToken,
           "annotations": "duration,distance",
-          "sources": "0", 
         },
         options: Options(
           headers: {'Accept': 'application/json'},
@@ -229,8 +239,8 @@ class RouteOptimizationService {
         };
       }
 
-      final List durationsFromStart = matrixResponse.data['durations'][0];
-      List<int> optimizedIndices = _solveNN(durationsFromStart);
+      final List durationsMatrix = matrixResponse.data['durations'];
+      List<int> optimizedIndices = _solveNearestNeighborTour(durationsMatrix);
       debugPrint("[OPTIMIZATION RESULT] OPTIMIZED ORDER INDICES: ${optimizedIndices.join(' -> ')}");
 
       List<Map<String, dynamic>> optimizedStops = [];
@@ -331,14 +341,44 @@ class RouteOptimizationService {
     }
   }
 
-  /// Greedy Nearest Neighbor solver
-  List<int> _solveNN(List durationsFromStart) {
-    List<MapEntry<int, double>> stops = [];
-    for (int i = 1; i < durationsFromStart.length; i++) {
-      stops.add(MapEntry(i, (durationsFromStart[i] as num).toDouble()));
+  /// True Nearest Neighbor TSP tour solver (Minimizes backtracking across the entire chain)
+  List<int> _solveNearestNeighborTour(List durationsMatrix) {
+    int numNodes = durationsMatrix.length; // Node 0 is start point, 1..N are stops
+    Set<int> unvisited = Set.from(List.generate(numNodes - 1, (i) => i + 1));
+    List<int> tour = [];
+    int currentNode = 0; // Start at origin
+
+    while (unvisited.isNotEmpty) {
+      int nearestNode = -1;
+      double minCost = double.infinity;
+
+      for (int nextNode in unvisited) {
+        double cost = 999999.0;
+        try {
+          if (durationsMatrix[currentNode] != null && durationsMatrix[currentNode][nextNode] != null) {
+            cost = (durationsMatrix[currentNode][nextNode] as num).toDouble();
+          }
+        } catch (_) {}
+
+        if (cost < minCost) {
+          minCost = cost;
+          nearestNode = nextNode;
+        }
+      }
+
+      if (nearestNode != -1) {
+        tour.add(nearestNode);
+        unvisited.remove(nearestNode);
+        currentNode = nearestNode;
+      } else {
+        int nextNode = unvisited.first;
+        tour.add(nextNode);
+        unvisited.remove(nextNode);
+        currentNode = nextNode;
+      }
     }
-    stops.sort((a, b) => a.value.compareTo(b.value));
-    return stops.map((e) => e.key).toList();
+
+    return tour;
   }
 
   Future<Map<String, dynamic>?> _getOptimizedRouteViaProxy({
