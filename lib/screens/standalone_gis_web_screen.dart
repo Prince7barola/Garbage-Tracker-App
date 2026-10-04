@@ -300,7 +300,10 @@ class _StandaloneGisWebScreenState extends State<StandaloneGisWebScreen> with Ti
       final String status = (truckData['status'] ?? 'ACTIVE').toString().toUpperCase();
 
       final String driverName = (truckData['driver_name'] ?? truckData['driverName'] ?? '').toString();
-      if (driverName.toLowerCase().contains("john driver")) return;
+      final String driverLower = driverName.toLowerCase();
+      final String tidLower = tid.toLowerCase();
+      if (driverLower.contains("john driver") || driverLower.contains("test") || driverLower.contains("mock") || driverLower.contains("sample") || driverLower.contains("dummy")) return;
+      if (tidLower.contains("test") || tidLower.contains("mock") || tidLower.contains("sample") || tidLower.contains("dummy")) return;
 
       final double lat = double.tryParse(truckData['latitude']?.toString() ?? truckData['lat']?.toString() ?? '0') ?? 0.0;
       final double lng = double.tryParse(truckData['longitude']?.toString() ?? truckData['lng']?.toString() ?? '0') ?? 0.0;
@@ -331,8 +334,8 @@ class _StandaloneGisWebScreenState extends State<StandaloneGisWebScreen> with Ti
         secondsAgo = ((now - lastSeenMs) / 1000).abs().toInt();
       }
 
-      // Freshness check: location update must be within last 120 seconds
-      final bool isFresh = (secondsAgo >= 0 && secondsAgo <= 120) || (lastSeenMs > 0 && (now - lastSeenMs).abs() <= 120000);
+      // Freshness check: location update must be within last 30 seconds for live active trucks
+      final bool isFresh = (secondsAgo >= 0 && secondsAgo <= 30) || (lastSeenMs > 0 && (now - lastSeenMs).abs() <= 30000);
 
       final bool isGenuinelyActive = isValidCoords && isActiveStatus && !isOfflineStatus && isOnlineFlag && isFresh;
 
