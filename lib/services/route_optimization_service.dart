@@ -203,45 +203,9 @@ class RouteOptimizationService {
       final double effectiveStartLat = startLat ?? currentLat;
       final double effectiveStartLng = startLng ?? currentLng;
 
-      List<List<double>> allCoords = [[effectiveStartLng, effectiveStartLat]];
-      for (var p in validPuroks) {
-        allCoords.add([(p['lng'] as num).toDouble(), (p['lat'] as num).toDouble()]);
-      }
-
-      String coordsString = allCoords.map((c) => "${c[0]},${c[1]}").join(";");
-
-      debugPrint("[ROUTING REQUEST] FULL MATRIX URL & COORDS: $coordsString");
-      
-      final String matrixUrl = "https://api.mapbox.com/directions-matrix/v1/mapbox/driving/$coordsString";
-      
-      // Omit sources parameter to get full N x N matrix for optimal TSP sequencing
-      final matrixResponse = await _dio.get(
-        matrixUrl, 
-        queryParameters: {
-          "access_token": _mapboxToken,
-          "annotations": "duration,distance",
-        },
-        options: Options(
-          headers: {'Accept': 'application/json'},
-          validateStatus: (status) => true,
-        ),
-      );
-
-      debugPrint("[ROUTING RESPONSE] MATRIX HTTP STATUS: ${matrixResponse.statusCode}");
-
-      if (matrixResponse.statusCode != 200 || matrixResponse.data == null || matrixResponse.data['code'] != 'Ok') {
-        String msg = matrixResponse.data?['message'] ?? 'Mapbox Matrix service returned status ${matrixResponse.statusCode}';
-        debugPrint("[ROUTE OPTIMIZATION ERROR] MATRIX MAPBOX ERROR: $msg");
-        return {
-          'success': false, 
-          'error': 'MATRIX_API_FAILED', 
-          'message': 'Routing Matrix API error: $msg'
-        };
-      }
-
-      final List durationsMatrix = matrixResponse.data['durations'];
-      List<int> optimizedIndices = _solveNearestNeighborTour(durationsMatrix);
-      debugPrint("[OPTIMIZATION RESULT] OPTIMIZED ORDER INDICES: ${optimizedIndices.join(' -> ')}");
+      // Generate deterministic geographic corridor sequence (South to North starting from closest to start)
+      List<int> optimizedIndices = _solveGeographicCorridorSequence(validPuroks, effectiveStartLat, effectiveStartLng);
+      debugPrint("[OPTIMIZATION RESULT] GEOGRAPHIC CORRIDOR ORDER INDICES: ${optimizedIndices.join(' -> ')}");
 
       List<Map<String, dynamic>> optimizedStops = [];
       for (int i = 0; i < optimizedIndices.length; i++) {
@@ -341,44 +305,37 @@ class RouteOptimizationService {
     }
   }
 
-  /// True Nearest Neighbor TSP tour solver (Minimizes backtracking across the entire chain)
-  List<int> _solveNearestNeighborTour(List durationsMatrix) {
-    int numNodes = durationsMatrix.length; // Node 0 is start point, 1..N are stops
-    Set<int> unvisited = Set.from(List.generate(numNodes - 1, (i) => i + 1));
-    List<int> tour = [];
-    int currentNode = 0; // Start at origin
+  /// Deterministic Geographic Corridor Sorting (South to North starting from closest to start)
+  List<int> _solveGeographicCorridorSequence(List<Map<String, dynamic>> validPuroks, double startLat, double startLng) {
+    if (validPuroks.isEmpty) return [];
 
-    while (unvisited.isNotEmpty) {
-      int nearestNode = -1;
-      double minCost = double.infinity;
-
-      for (int nextNode in unvisited) {
-        double cost = 999999.0;
-        try {
-          if (durationsMatrix[currentNode] != null && durationsMatrix[currentNode][nextNode] != null) {
-            cost = (durationsMatrix[currentNode][nextNode] as num).toDouble();
-          }
-        } catch (_) {}
-
-        if (cost < minCost) {
-          minCost = cost;
-          nearestNode = nextNode;
-        }
-      }
-
-      if (nearestNode != -1) {
-        tour.add(nearestNode);
-        unvisited.remove(nearestNode);
-        currentNode = nearestNode;
-      } else {
-        int nextNode = unvisited.first;
-        tour.add(nextNode);
-        unvisited.remove(nextNode);
-        currentNode = nextNode;
+    // 1. Find the stop closest to the start location as Stop #1
+    int firstIndex = 0;
+    double minStartDist = double.infinity;
+    for (int i = 0; i < validPuroks.length; i++) {
+      double dist = Geolocator.distanceBetween(
+        startLat, startLng,
+        (validPuroks[i]['lat'] as num).toDouble(),
+        (validPuroks[i]['lng'] as num).toDouble(),
+      );
+      if (dist < minStartDist) {
+        minStartDist = dist;
+        firstIndex = i;
       }
     }
 
-    return tour;
+    List<int> indices = List.generate(validPuroks.length, (i) => i);
+    indices.remove(firstIndex);
+
+    // 2. Sort remaining stops by latitude ascending (South to North progression)
+    indices.sort((a, b) => 
+      ((validPuroks[a]['lat'] as num).toDouble()).compareTo((validPuroks[b]['lat'] as num).toDouble())
+    );
+
+    indices.insert(0, firstIndex);
+
+    // Convert to 1-based waypoint indices (0 is origin point, so indices are 1..N)
+    return indices.map((i) => i + 1).toList();
   }
 
   Future<Map<String, dynamic>?> _getOptimizedRouteViaProxy({
