@@ -117,7 +117,7 @@ class ServiceArea {
 class ServiceAreaService {
   final FirebaseDatabase _database = FirebaseDatabase.instance;
 
-  /// Official canonical dataset with verified polygon geometries and reference colors
+  /// Official canonical dataset with exact updated verified coordinates
   static const List<ServiceArea> defaultServiceAreas = [
     // 1. Purok 1 (Red)
     ServiceArea(
@@ -142,76 +142,78 @@ class ServiceAreaService {
       coordinateSource: 'Barangay Balintawak Official GIS',
       lastVerificationDate: '2026-10-02',
     ),
-    // 2. Purok 2 (Blue)
+    // 2. Purok 2 (Blue) - Updated Coordinates
     ServiceArea(
       id: 'purok_2',
       name: 'Purok 2',
       type: 'Purok',
       isTruckStop: true,
-      latitude: 13.94020,
-      longitude: 121.16380,
-      entranceLat: 13.94020,
-      entranceLng: 121.16380,
+      latitude: 13.96142346200848,
+      longitude: 121.15445314118254,
+      entranceLat: 13.96142346200848,
+      entranceLng: 121.15445314118254,
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#1E88E5', // Blue
-      boundaryGeometry: [
-        [121.1620, 13.9460],
-        [121.1675, 13.9450],
-        [121.1690, 13.9400],
-        [121.1630, 13.9390],
-        [121.1620, 13.9460]
-      ],
-      coordinateSource: 'Barangay Balintawak Official GIS',
+      coordinateSource: 'Admin Verified (Updated)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 3. Purok 3 (Orange)
+    // 3. Purok 3 (Orange) - Updated Coordinates
     ServiceArea(
       id: 'purok_3',
       name: 'Purok 3',
       type: 'Purok',
       isTruckStop: true,
-      latitude: 13.93750,
-      longitude: 121.16600,
-      entranceLat: 13.93750,
-      entranceLng: 121.16600,
+      latitude: 13.952769235582661,
+      longitude: 121.18547696684433,
+      entranceLat: 13.952769235582661,
+      entranceLng: 121.18547696684433,
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#FB8C00', // Orange
-      boundaryGeometry: [
-        [121.1635, 13.9385],
-        [121.1685, 13.9395],
-        [121.1695, 13.9355],
-        [121.1635, 13.9350],
-        [121.1635, 13.9385]
-      ],
-      coordinateSource: 'Barangay Balintawak Official GIS',
+      coordinateSource: 'Admin Verified (Updated)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 4. Purok Paraiso (Green)
+    // 4. Purok 4 / Sitio Pugon / Sitio Turibio (Yellow) - 4 Reference Landmarks
+    ServiceArea(
+      id: 'purok_4',
+      name: 'Purok 4 (Sitio Pugon / Turibio)',
+      type: 'Purok',
+      isTruckStop: true,
+      latitude: 13.96265,
+      longitude: 121.15160,
+      entranceLat: 13.96265,
+      entranceLng: 121.15160,
+      radius: 70.0,
+      verificationStatus: 'VERIFIED',
+      color: '#FFD600', // Yellow
+      boundaryGeometry: [
+        [121.1487, 13.9658], // Pueblo de Oro Courtyards Lipa
+        [121.1508, 13.9634], // JPFES Fire Extinguisher Trading
+        [121.1551, 13.9678], // JuanClick PC Solutions
+        [121.1518, 13.9536], // JR Lithium Battery Shop
+        [121.1487, 13.9658]  // Close polygon
+      ],
+      coordinateSource: 'Admin Verified (4 Reference Landmarks)',
+      lastVerificationDate: '2026-10-02',
+    ),
+    // 5. Purok Paraiso (Green) - Updated Coordinates
     ServiceArea(
       id: 'purok_paraiso',
       name: 'Purok Paraiso',
       type: 'Purok',
       isTruckStop: true,
-      latitude: 13.93850,
-      longitude: 121.16020,
-      entranceLat: 13.93850,
-      entranceLng: 121.16020,
+      latitude: 13.946622854597587,
+      longitude: 121.15625598161627,
+      entranceLat: 13.946622854597587,
+      entranceLng: 121.15625598161627,
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#43A047', // Green
-      boundaryGeometry: [
-        [121.1530, 13.9420],
-        [121.1585, 13.9430],
-        [121.1595, 13.9380],
-        [121.1540, 13.9365],
-        [121.1530, 13.9420]
-      ],
-      coordinateSource: 'Barangay Balintawak Official GIS',
+      coordinateSource: 'Admin Verified (Updated)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 5. Riverside (Purple)
+    // 6. Riverside (Purple)
     ServiceArea(
       id: 'riverside',
       name: 'Riverside',
@@ -224,17 +226,10 @@ class ServiceAreaService {
       radius: 60.0,
       verificationStatus: 'VERIFIED',
       color: '#8E24AA', // Purple
-      boundaryGeometry: [
-        [121.1550, 13.9375],
-        [121.1610, 13.9380],
-        [121.1620, 13.9345],
-        [121.1560, 13.9330],
-        [121.1550, 13.9375]
-      ],
-      coordinateSource: 'Barangay Balintawak Official GIS',
+      coordinateSource: 'Admin Verified (Approximate Map Center)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 6. Brixton Homes (Teal/Cyan)
+    // 7. Brixton Homes (Teal/Cyan)
     ServiceArea(
       id: 'brixton_homes',
       name: 'Brixton Homes',
@@ -247,17 +242,10 @@ class ServiceAreaService {
       radius: 65.0,
       verificationStatus: 'VERIFIED',
       color: '#00ACC1', // Teal
-      boundaryGeometry: [
-        [121.1615, 13.9375],
-        [121.1675, 13.9380],
-        [121.1680, 13.9330],
-        [121.1620, 13.9315],
-        [121.1615, 13.9375]
-      ],
-      coordinateSource: 'Barangay Balintawak Official GIS',
+      coordinateSource: 'Admin Verified (Accurate Location)',
       lastVerificationDate: '2026-10-02',
     ),
-    // 7. El Pueblo (Pink)
+    // 8. El Pueblo (Pink)
     ServiceArea(
       id: 'el_pueblo',
       name: 'El Pueblo',
@@ -270,50 +258,25 @@ class ServiceAreaService {
       radius: 65.0,
       verificationStatus: 'VERIFIED',
       color: '#E91E63', // Pink
-      boundaryGeometry: [
-        [121.1640, 13.9345],
-        [121.1710, 13.9350],
-        [121.1730, 13.9285],
-        [121.1650, 13.9270],
-        [121.1640, 13.9345]
-      ],
       coordinateSource: 'Barangay Balintawak Official GIS',
       lastVerificationDate: '2026-10-02',
     ),
-    // 8. T.M. Kalaw Street (Road Segment)
-    ServiceArea(
-      id: 'tm_kalaw_st',
-      name: 'T.M. Kalaw Street',
-      type: 'Road Segment',
-      isTruckStop: true,
-      latitude: 13.9425,
-      longitude: 121.1633,
-      entranceLat: 13.9425,
-      entranceLng: 121.1633,
-      endLat: 13.93600,
-      endLng: 121.15720,
-      radius: 70.0,
-      verificationStatus: 'VERIFIED',
-      color: '#00796B',
-      coordinateSource: 'Barangay Balintawak Official GIS',
-      lastVerificationDate: '2026-10-02',
-    ),
-    // 9. Ayala Highway Collection Segment (Highway Segment)
+    // 9. Ayala Highway Collection Segment (Road Segment)
     ServiceArea(
       id: 'ayala_hwy_almaris_apat',
-      name: 'Ayala Highway (Almaris to Apat Grill)',
+      name: 'Ayala Highway (Fat Grill to Almarius Grill)',
       type: 'Highway Segment',
       isTruckStop: true,
-      latitude: 13.9471,
-      longitude: 121.13325,
-      entranceLat: 13.9482, // Almario's Resort Start
-      entranceLng: 121.1354,
-      endLat: 13.9461,     // Fat Grill / Apat Grill End
-      endLng: 121.1311,
+      latitude: 13.9515,
+      longitude: 121.16235,
+      entranceLat: 13.9558, // Fat Grill Start
+      entranceLng: 121.1614,
+      endLat: 13.9472,     // Almarius Grill and Resort End
+      endLng: 121.1633,
       radius: 80.0,
       verificationStatus: 'VERIFIED',
       color: '#3949AB',
-      coordinateSource: 'Barangay Balintawak Official GIS',
+      coordinateSource: 'Admin Verified (Road Segment Endpoints)',
       lastVerificationDate: '2026-10-02',
     ),
 
@@ -340,49 +303,21 @@ class ServiceAreaService {
     'Central (Purok 1)',
     'Purok 2',
     'Purok 3',
+    'Purok 4 (Sitio Pugon / Turibio)',
     'Purok Paraiso',
     'Riverside',
     'Brixton Homes',
     'El Pueblo',
-    'T.M. Kalaw Street',
-    'Ayala Highway (Almaris to Apat Grill)',
+    'Ayala Highway (Fat Grill to Almarius Grill)',
     'San Nicolas',
   ];
 
-  /// Ensures that 'puroks' in Firebase RTDB contains the canonical Balintawak service areas and syncs coordinates & boundaries
+  /// Ensures that 'puroks' in Firebase RTDB contains the canonical Balintawak service areas
   Future<void> ensureInitialized() async {
     try {
       final snap = await _database.ref('puroks').get();
       if (!snap.exists || snap.value == null) {
         await resetToDefaultBalintawakAreas();
-      } else {
-        final Map data = snap.value as Map;
-        Map<String, dynamic> updates = {};
-        for (var defArea in defaultServiceAreas) {
-          if (!data.containsKey(defArea.id)) {
-            updates[defArea.id] = defArea.toJson();
-          } else {
-            updates['${defArea.id}/latitude'] = defArea.latitude;
-            updates['${defArea.id}/longitude'] = defArea.longitude;
-            updates['${defArea.id}/lat'] = defArea.latitude;
-            updates['${defArea.id}/lng'] = defArea.longitude;
-            updates['${defArea.id}/entranceLat'] = defArea.entranceLat;
-            updates['${defArea.id}/entranceLng'] = defArea.entranceLng;
-            if (defArea.boundaryGeometry.isNotEmpty) {
-              updates['${defArea.id}/boundaryGeometry'] = defArea.boundaryGeometry;
-            }
-            if (defArea.color.isNotEmpty) {
-              updates['${defArea.id}/color'] = defArea.color;
-            }
-            if (defArea.endLat != null) updates['${defArea.id}/endLat'] = defArea.endLat;
-            if (defArea.endLng != null) updates['${defArea.id}/endLng'] = defArea.endLng;
-            updates['${defArea.id}/verificationStatus'] = defArea.verificationStatus;
-          }
-        }
-        if (updates.isNotEmpty) {
-          await _database.ref('puroks').update(updates);
-          debugPrint("[SERVICE AREA] Synchronized ${updates.length} service area boundary and coordinate fields in Firebase RTDB.");
-        }
       }
     } catch (e) {
       debugPrint("[SERVICE AREA] Error ensuring service area initialization: $e");
@@ -399,7 +334,7 @@ class ServiceAreaService {
     debugPrint("[SERVICE AREA] Database 'puroks' initialized with ${defaultServiceAreas.length} documented Barangay Balintawak areas.");
   }
 
-  /// Retrieves all service areas from Firebase RTDB and merges default boundaryGeometry and colors if missing
+  /// Retrieves all service areas from Firebase RTDB
   Future<List<ServiceArea>> getAllServiceAreas() async {
     await ensureInitialized();
     try {
@@ -421,6 +356,18 @@ class ServiceAreaService {
             final String areaId = areaMap['id'].toString();
             if (defaultMap.containsKey(areaId)) {
               final def = defaultMap[areaId]!;
+              if (def.latitude != 0.0) {
+                areaMap['latitude'] = def.latitude;
+                areaMap['lat'] = def.latitude;
+              }
+              if (def.longitude != 0.0) {
+                areaMap['longitude'] = def.longitude;
+                areaMap['lng'] = def.longitude;
+              }
+              if (def.entranceLat != 0.0) areaMap['entranceLat'] = def.entranceLat;
+              if (def.entranceLng != 0.0) areaMap['entranceLng'] = def.entranceLng;
+              if (def.endLat != null) areaMap['endLat'] = def.endLat;
+              if (def.endLng != null) areaMap['endLng'] = def.endLng;
               if ((areaMap['boundaryGeometry'] == null || (areaMap['boundaryGeometry'] as List).isEmpty) && def.boundaryGeometry.isNotEmpty) {
                 areaMap['boundaryGeometry'] = def.boundaryGeometry;
               }
