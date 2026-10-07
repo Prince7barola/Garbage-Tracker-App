@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../api/api_service.dart';
 import '../utils/app_theme.dart';
 import '../widgets/legal_agreement_dialog.dart';
+import '../widgets/terms_acceptance_dialog.dart';
 import '../widgets/animated_auth_background.dart';
 import '../widgets/hover_action_button.dart';
 import '../widgets/fade_slide_entrance.dart';
@@ -12,6 +13,7 @@ import '../utils/app_localizations.dart';
 import '../utils/responsive_text.dart';
 import '../utils/responsive.dart';
 import '../widgets/custom_snackbar.dart';
+import '../services/service_area_service.dart';
 
 class ResidentRegisterScreen extends StatefulWidget {
   const ResidentRegisterScreen({super.key});
@@ -52,19 +54,7 @@ class _ResidentRegisterScreenState extends State<ResidentRegisterScreen> {
   bool _termsAccepted = false;
   final Map<String, Timer?> _errorTimers = {};
 
-  final List<String> _puroks = [
-    "Central (Purok 1)",
-    "Purok Paraiso",
-    "Riverside",
-    "T.M. Kalaw Street",
-    "Ayala Highway (Almaris to Apat Grill)",
-    "Brixton Homes",
-    "El Pueblo",
-    "San Nicolas",
-    "Paraiso (Street Sweeping)",
-    "Purok 2",
-    "Purok 3",
-  ];
+  final List<String> _puroks = ServiceAreaService.documentedAreaNames;
   final ApiService _apiService = ApiService();
 
   @override
@@ -331,14 +321,10 @@ class _ResidentRegisterScreenState extends State<ResidentRegisterScreen> {
 
     if (_usernameError != null || _emailError != null || _passwordError != null ||
         _confirmPasswordError != null || _fullNameError != null || _phoneError != null ||
-        _addressError != null || _selectedPurok == null || !_termsAccepted) {
+        _addressError != null || _selectedPurok == null) {
 
-      String msg = 'err_general';
+      String msg = 'complete_form_correctly';
       if (_selectedPurok == null) msg = 'err_purok_req';
-      if (!_termsAccepted) msg = 'err_terms_req';
-      
-      // Override with "Please complete form" if most fields are missing or have errors
-      msg = 'complete_form_correctly';
 
       if (mounted) {
         CustomSnackBar.show(context, message: AppLocalizations.get(msg), isError: true);
@@ -347,78 +333,92 @@ class _ResidentRegisterScreenState extends State<ResidentRegisterScreen> {
       return;
     }
 
-    try {
-      final registerData = {
-        'username': _usernameController.text.trim(),
-        'name': _fullNameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'password': _passwordController.text,
-        'role': 'resident',
-        'phone': _phoneController.text.trim(),
-        'purok': _selectedPurok,
-        'complete_address': _addressController.text.trim(),
-        'termsAccepted': 1,
-        'privacyPolicyAccepted': 1,
-        'termsVersion': '1.0',
-        'privacyPolicyVersion': '1.0',
-        'consentTimestamp': DateTime.now().toIso8601String(),
-      };
+    // Form fields are valid! Stop form loading spinner and open the Terms Acceptance View
+    setState(() => _isLoading = false);
 
-      final response = await _apiService.register(registerData);
+    String? successMsg;
 
-      if (response.data['success'] == true) {
-        final userId = response.data['user_id'];
+    final bool? accepted = await TermsAcceptanceDialog.show(
+      context,
+      onAcceptAndSubmit: () async {
         try {
-          // Add to residents node for real-time dashboard updates
-          if (userId != null) {
-            await FirebaseDatabase.instance.ref('residents/$userId').set({
-              'name': _fullNameController.text.trim(),
-              'email': _emailController.text.trim(),
-              'phone': _phoneController.text.trim(),
-              'purok': _selectedPurok,
-              'complete_address': _addressController.text.trim(),
-              'role': 'resident',
-              'created_at': ServerValue.timestamp,
-            });
+          final registerData = {
+            'username': _usernameController.text.trim(),
+            'name': _fullNameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'password': _passwordController.text,
+            'role': 'resident',
+            'phone': _phoneController.text.trim(),
+            'purok': _selectedPurok,
+            'complete_address': _addressController.text.trim(),
+            'termsAccepted': 1,
+            'privacyPolicyAccepted': 1,
+            'termsVersion': '1.0',
+            'privacyPolicyVersion': '1.0',
+            'consentTimestamp': DateTime.now().toIso8601String(),
+          };
+
+          final response = await _apiService.register(registerData);
+
+          if (response.data['success'] == true) {
+            successMsg = response.data['message'] ?? "Registration successful. You can now log in.";
+            final userId = response.data['user_id'];
+            try {
+              if (userId != null) {
+                await FirebaseDatabase.instance.ref('residents/$userId').set({
+                  'name': _fullNameController.text.trim(),
+                  'email': _emailController.text.trim(),
+                  'phone': _phoneController.text.trim(),
+                  'purok': _selectedPurok,
+                  'complete_address': _addressController.text.trim(),
+                  'role': 'resident',
+                  'created_at': ServerValue.timestamp,
+                });
+              }
+
+              await FirebaseDatabase.instance.ref('notifications').push().set({
+                'type': 'REGISTRATION',
+                'title': AppLocalizations.get('new_reg_title'),
+                'message': AppLocalizations.get('new_reg_notif').replaceFirst('{name}', _fullNameController.text.trim()),
+                'timestamp': ServerValue.timestamp,
+                'isRead': false,
+                'relatedId': _usernameController.text
+              });
+            } catch (e) {
+              debugPrint("Firebase Notification Error: $e");
+            }
+
+            return true;
+          } else {
+            if (mounted) {
+              CustomSnackBar.show(
+                context,
+                message: response.data['message'] ?? AppLocalizations.get('reg_failed'),
+                isError: true,
+              );
+            }
+            return false;
           }
-
-          await FirebaseDatabase.instance.ref('notifications').push().set({
-            'type': 'REGISTRATION',
-            'title': AppLocalizations.get('new_reg_title'),
-            'message': AppLocalizations.get('new_reg_notif').replaceFirst('{name}', _fullNameController.text.trim()),
-            'timestamp': ServerValue.timestamp,
-            'isRead': false,
-            'relatedId': _usernameController.text
-          });
         } catch (e) {
-          debugPrint("Firebase Notification Error: $e");
+          if (mounted) {
+            CustomSnackBar.show(
+              context,
+              message: AppLocalizations.get('err_network'),
+              isError: true,
+            );
+          }
+          return false;
         }
+      },
+    );
 
-        if (!mounted) return;
-        CustomSnackBar.show(
-          context,
-          message: response.data['message'] ?? AppLocalizations.get('reg_success'),
-        );
-        // Bumalik sa simula (Welcome/Login Screen)
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-      } else {
-        if (!mounted) return;
-        CustomSnackBar.show(
-          context,
-          message: response.data['message'] ?? AppLocalizations.get('reg_failed'),
-          isError: true,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        CustomSnackBar.show(
-          context,
-          message: AppLocalizations.get('err_network'),
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    if (accepted == true && mounted) {
+      setState(() => _termsAccepted = true);
+      CustomSnackBar.show(
+        context,
+        message: successMsg ?? "Registration successful. You can now log in.",
+      );
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
   }
 

@@ -1532,7 +1532,7 @@ class _DriverDashboardState extends State<DriverDashboard> with TickerProviderSt
         // 3. PREVENT FALSE POSITIVES: Require 3 consecutive valid points (approx 6-15 seconds)
         if (_purokConsecutivePoints[key]! >= 3 || _isSimulationMode) {
           debugPrint("[WEEKLY] Robust detection confirmed for ${p['name']}. Marking COMPLETED.");
-          
+
           _database.ref('weekly_collection_progress/$_currentWeekKey/$driverId/areas/$key').update({
             'completed': true,
             'completedAt': DateFormat('yyyy-MM-dd hh:mm a').format(DateTime.now()),
@@ -1541,7 +1541,7 @@ class _DriverDashboardState extends State<DriverDashboard> with TickerProviderSt
             'sessionId': _sessionId,
             'truckId': _user?.preferredTruck ?? "Unknown",
           });
-          
+
           _database.ref('truck_locations').child(_user?.preferredTruck ?? "Unknown").update({'current_purok': p['name']});
           
           // --- Automatic Arrival Notifications ---
@@ -2010,7 +2010,7 @@ class _DriverDashboardState extends State<DriverDashboard> with TickerProviderSt
     }
     final truckId = _user?.preferredTruck ?? "Unknown";
     final String driverId = _user!.userId.toString();
-    
+
     try {
       // 1. Send Notification (Target specific Purok residents)
       await _database.ref('notifications').push().set({

@@ -14,20 +14,19 @@ if (!empty($data->user_id) && !empty($data->role)) {
         $user_id = $data->user_id;
         $role = strtolower($data->role);
 
-        // Permanently delete the rejected registration since it was never approved
         if ($role === 'resident') {
-            $query = "DELETE FROM residents WHERE resident_id = ? AND is_archived = 1";
+            $query = "UPDATE residents SET approval_status = 'rejected' WHERE resident_id = ?";
         } else {
-            $query = "DELETE FROM users WHERE user_id = ? AND is_archived = 1";
+            $query = "UPDATE users SET approval_status = 'rejected' WHERE user_id = ?";
         }
 
         $stmt = $conn->prepare($query);
         $stmt->execute([$user_id]);
 
         if ($stmt->rowCount() > 0) {
-            echo json_encode(["success" => true, "message" => "Registration rejected and removed successfully."]);
+            echo json_encode(["success" => true, "message" => "Registration rejected successfully."]);
         } else {
-            echo json_encode(["success" => false, "message" => "User not found, already approved, or already removed."]);
+            echo json_encode(["success" => false, "message" => "User not found."]);
         }
 
     } catch (PDOException $e) {

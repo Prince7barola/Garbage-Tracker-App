@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../api/api_service.dart';
 import '../utils/app_theme.dart';
 import '../widgets/legal_agreement_dialog.dart';
+import '../widgets/terms_acceptance_dialog.dart';
 import '../widgets/animated_auth_background.dart';
 import '../widgets/hover_action_button.dart';
 import '../widgets/fade_slide_entrance.dart';
@@ -327,7 +328,7 @@ class _DriverRegisterScreenState extends State<DriverRegisterScreen> {
 
     if (_usernameError != null || _emailError != null || _passwordError != null ||
         _confirmPasswordError != null || _fullNameError != null || _licenseError != null ||
-        _phoneError != null || !_termsAccepted) {
+        _phoneError != null) {
       
       String msg = 'complete_form_correctly';
 
@@ -338,65 +339,79 @@ class _DriverRegisterScreenState extends State<DriverRegisterScreen> {
       return;
     }
 
-    try {
-      final registerData = {
-        'username': _usernameController.text.trim(),
-        'name': _fullNameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'password': _passwordController.text,
-        'role': 'driver',
-        'phone': _phoneController.text.trim(),
-        'license_number': _licenseController.text.trim(),
-        'preferred_truck': _truckController.text.trim(),
-        'termsAccepted': 1,
-        'privacyPolicyAccepted': 1,
-        'termsVersion': '1.0',
-        'privacyPolicyVersion': '1.0',
-        'consentTimestamp': DateTime.now().toIso8601String(),
-      };
+    // Form fields are valid! Stop form loading spinner and open the Terms Acceptance View
+    setState(() => _isLoading = false);
 
-      final response = await _apiService.register(registerData);
+    String? successMsg;
 
-      if (response.data['success'] == true) {
+    final bool? accepted = await TermsAcceptanceDialog.show(
+      context,
+      onAcceptAndSubmit: () async {
         try {
-          await FirebaseDatabase.instance.ref('notifications').push().set({
-            "type": "REGISTRATION",
-            "title": AppLocalizations.get('new_driver_reg_title'),
-            "message": AppLocalizations.get('new_driver_reg_notif').replaceFirst('{name}', _fullNameController.text.trim()),
-            "timestamp": ServerValue.timestamp,
-            "isRead": false,
-            "relatedId": _usernameController.text.trim(),
-          });
-        } catch (e) {
-          debugPrint("Firebase Notification Error: $e");
-        }
+          final registerData = {
+            'username': _usernameController.text.trim(),
+            'name': _fullNameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'password': _passwordController.text,
+            'role': 'driver',
+            'phone': _phoneController.text.trim(),
+            'license_number': _licenseController.text.trim(),
+            'preferred_truck': _truckController.text.trim(),
+            'termsAccepted': 1,
+            'privacyPolicyAccepted': 1,
+            'termsVersion': '1.0',
+            'privacyPolicyVersion': '1.0',
+            'consentTimestamp': DateTime.now().toIso8601String(),
+          };
 
-        if (!mounted) return;
-        CustomSnackBar.show(
-          context,
-          message: response.data['message'] ?? AppLocalizations.get('reg_success'),
-        );
-        
-        // Bumalik sa simula (Welcome/Login Screen) para hindi mag-login nang hindi pa approved
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-      } else {
-        if (!mounted) return;
-        CustomSnackBar.show(
-          context,
-          message: response.data['message'] ?? AppLocalizations.get('reg_failed'),
-          isError: true,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        CustomSnackBar.show(
-          context,
-          message: AppLocalizations.get('err_network'),
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+          final response = await _apiService.register(registerData);
+
+          if (response.data['success'] == true) {
+            successMsg = response.data['message'] ?? "Registration submitted. Your account is pending administrator approval. You can log in once approved.";
+            try {
+              await FirebaseDatabase.instance.ref('notifications').push().set({
+                "type": "REGISTRATION",
+                "title": AppLocalizations.get('new_driver_reg_title'),
+                "message": AppLocalizations.get('new_driver_reg_notif').replaceFirst('{name}', _fullNameController.text.trim()),
+                "timestamp": ServerValue.timestamp,
+                "isRead": false,
+                "relatedId": _usernameController.text.trim(),
+              });
+            } catch (e) {
+              debugPrint("Firebase Notification Error: $e");
+            }
+
+            return true;
+          } else {
+            if (mounted) {
+              CustomSnackBar.show(
+                context,
+                message: response.data['message'] ?? AppLocalizations.get('reg_failed'),
+                isError: true,
+              );
+            }
+            return false;
+          }
+        } catch (e) {
+          if (mounted) {
+            CustomSnackBar.show(
+              context,
+              message: AppLocalizations.get('err_network'),
+              isError: true,
+            );
+          }
+          return false;
+        }
+      },
+    );
+
+    if (accepted == true && mounted) {
+      setState(() => _termsAccepted = true);
+      CustomSnackBar.show(
+        context,
+        message: successMsg ?? "Registration submitted. Your account is pending administrator approval. You can log in once approved.",
+      );
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
   }
 

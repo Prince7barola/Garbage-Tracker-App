@@ -15,6 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $resident_id = $_POST['resident_id'] ?? null;
     $category = $_POST['category'] ?? null;
     $description = $_POST['description'] ?? null;
+    $purok_input = $_POST['purok'] ?? null;
+    $location = $_POST['location'] ?? null;
 
     if ($resident_id && $category && $description) {
         try {
@@ -23,12 +25,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $resStmt->execute([$resident_id]);
             $resident = $resStmt->fetch();
             $resident_name = $resident['name'] ?? "Resident";
-            $purok = $resident['purok'] ?? "Unknown";
+            $purok = !empty($purok_input) ? $purok_input : ($resident['purok'] ?? "Unknown");
+            $location_str = !empty($location) ? $location : $purok;
 
-            $query = "INSERT INTO complaints (resident_id, category, description, status)
-                      VALUES (?, ?, ?, 'pending')";
+            // Check if purok and location columns exist in complaints table, otherwise insert accordingly
+            $query = "INSERT INTO complaints (resident_id, category, description, status, purok, location)
+                      VALUES (?, ?, ?, 'pending', ?, ?)";
             $stmt = $conn->prepare($query);
-            $stmt->execute([$resident_id, $category, $description]);
+            $stmt->execute([$resident_id, $category, $description, $purok, $location_str]);
 
             // EMAIL NOTIFICATION TO ADMIN
             try {
@@ -59,6 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <ul>
                                 <li><strong>Resident:</strong> $resident_name</li>
                                 <li><strong>Purok:</strong> $purok</li>
+                                <li><strong>Specific Location:</strong> $location_str</li>
                                 <li><strong>Category:</strong> $category</li>
                                 <li><strong>Description:</strong> $description</li>
                             </ul>

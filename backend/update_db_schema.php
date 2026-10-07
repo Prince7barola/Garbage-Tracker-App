@@ -1,5 +1,17 @@
 <?php
-header("Content-Type: application/json");
+// CLI-only execution with explicit --apply flag required
+if (php_sapi_name() !== 'cli') {
+    http_response_code(403);
+    echo "Access denied. This script can only be run from the command line.\n";
+    exit(1);
+}
+
+if (!in_array('--apply', $argv)) {
+    echo "Usage: php update_db_schema.php --apply\n";
+    echo "Refusing to execute schema changes without the explicit --apply flag.\n";
+    exit(1);
+}
+
 require_once 'db_config.php';
 
 try {
@@ -25,7 +37,7 @@ try {
       PRIMARY KEY (`id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    // 4. Create password_resets table if not exists (often used for OTP storage)
+    // 4. Create password_resets table if not exists
     $conn->exec("CREATE TABLE IF NOT EXISTS `password_resets` (
       `id` int(11) NOT NULL AUTO_INCREMENT,
       `email` varchar(255) NOT NULL,

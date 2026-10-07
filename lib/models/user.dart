@@ -11,6 +11,8 @@ class UserData {
   final String? preferredTruck;
   final String? profilePicture;
   final int isArchived;
+  final String approvalStatus;
+  final String accountStatus;
   final String? createdAt;
 
   UserData({
@@ -26,6 +28,8 @@ class UserData {
     this.preferredTruck,
     this.profilePicture,
     this.isArchived = 0,
+    this.approvalStatus = 'approved',
+    this.accountStatus = 'active',
     this.createdAt,
   });
 
@@ -43,6 +47,8 @@ class UserData {
       preferredTruck: json['preferred_truck']?.toString(),
       profilePicture: json['profile_picture']?.toString(),
       isArchived: int.tryParse(json['is_archived'].toString()) ?? 0,
+      approvalStatus: json['approval_status']?.toString() ?? 'approved',
+      accountStatus: json['account_status']?.toString() ?? 'active',
       createdAt: json['created_at']?.toString(),
     );
   }
@@ -61,6 +67,8 @@ class UserData {
       'preferred_truck': preferredTruck,
       'profile_picture': profilePicture,
       'is_archived': isArchived,
+      'approval_status': approvalStatus,
+      'account_status': accountStatus,
       'created_at': createdAt,
     };
   }
@@ -90,6 +98,8 @@ class UserData {
     String? preferredTruck,
     String? profilePicture,
     int? isArchived,
+    String? approvalStatus,
+    String? accountStatus,
     String? createdAt,
   }) {
     return UserData(
@@ -105,6 +115,8 @@ class UserData {
       preferredTruck: preferredTruck ?? this.preferredTruck,
       profilePicture: profilePicture ?? this.profilePicture,
       isArchived: isArchived ?? this.isArchived,
+      approvalStatus: approvalStatus ?? this.approvalStatus,
+      accountStatus: accountStatus ?? this.accountStatus,
       createdAt: createdAt ?? this.createdAt,
     );
   }

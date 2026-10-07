@@ -9,7 +9,8 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: *");
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS, DELETE, PUT");
 
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+$requestMethod = $_SERVER['REQUEST_METHOD'] ?? '';
+if ($requestMethod === 'OPTIONS') {
     exit(0);
 }
 

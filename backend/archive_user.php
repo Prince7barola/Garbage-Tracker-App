@@ -12,29 +12,16 @@ if (!$data || !isset($data->user_id) || !isset($data->role) || !isset($data->is_
 $user_id = $data->user_id;
 $role = $data->role;
 $is_archived = $data->is_archived ? 1 : 0;
+$account_status = $is_archived ? 'archived' : 'active';
 $archived_at = $is_archived ? date("Y-m-d H:i:s") : null;
 
 try {
-    // Check if archived_at column exists
-    $columnCheck = $conn->query("SHOW COLUMNS FROM residents LIKE 'archived_at'");
-    $hasArchivedAt = $columnCheck->rowCount() > 0;
-
     if ($role === 'resident') {
-        if ($hasArchivedAt) {
-            $query = "UPDATE residents SET is_archived = ?, archived_at = ? WHERE resident_id = ?";
-            $params = [$is_archived, $archived_at, $user_id];
-        } else {
-            $query = "UPDATE residents SET is_archived = ? WHERE resident_id = ?";
-            $params = [$is_archived, $user_id];
-        }
+        $query = "UPDATE residents SET is_archived = ?, account_status = ?, archived_at = ? WHERE resident_id = ?";
+        $params = [$is_archived, $account_status, $archived_at, $user_id];
     } else {
-        if ($hasArchivedAt) {
-            $query = "UPDATE users SET is_archived = ?, archived_at = ? WHERE user_id = ?";
-            $params = [$is_archived, $archived_at, $user_id];
-        } else {
-            $query = "UPDATE users SET is_archived = ? WHERE user_id = ?";
-            $params = [$is_archived, $user_id];
-        }
+        $query = "UPDATE users SET is_archived = ?, account_status = ?, archived_at = ? WHERE user_id = ?";
+        $params = [$is_archived, $account_status, $archived_at, $user_id];
     }
 
     $stmt = $conn->prepare($query);

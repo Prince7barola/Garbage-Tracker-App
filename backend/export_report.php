@@ -60,33 +60,31 @@ try {
     $complaints = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(Exception $e) {}
 
-// Purok Coverage Table (Visit Frequency)
+// Purok Coverage Table (Visit Frequency) using parameters passed from Flutter
 $puroks = [
-    "Central (Purok 1)",
-    "Purok Paraiso",
-    "Riverside",
-    "T.M. Kalaw Street",
-    "Ayala Highway (Almaris to Apat Grill)",
-    "Brixton Homes",
-    "El Pueblo",
-    "San Nicolas",
-    "Paraiso (Street Sweeping)",
-    "Purok 2",
-    "Purok 3"
+    'Ayala Highway (Almarius to Fat Grill)',
+    'Brixton Homes',
+    'Central (Purok 1)',
+    'Purok 2',
+    'Purok 3',
+    'Purok 4 / El Pueblo',
+    'Purok Paraiso',
+    'Riverside',
+    'San Nicolas',
+    'T.M. Kalaw Street'
 ];
 $coverage_data = [];
-try {
-    // Get last visit and count per purok from collection_logs
-    foreach($puroks as $p) {
-        $stmt = $conn->prepare("SELECT COUNT(*) as count, MAX(timestamp) as last_visit FROM collection_logs WHERE zone_name = ?");
-        $stmt->execute([$p]);
-        $res = $stmt->fetch(PDO::FETCH_ASSOC);
-        $coverage_data[$p] = [
-            'count' => $res['count'] ?? 0,
-            'last' => $res['last_visit'] ? date('Y-m-d H:i:s', strtotime($res['last_visit'])) : 'NO VISITS RECORDED'
-        ];
+for ($i = 0; $i < 10; $i++) {
+    $p_name = $_GET["purok_name_$i"] ?? ($puroks[$i] ?? "Area $i");
+    $p_count = intval($_GET["purok_count_$i"] ?? 0);
+    if ($p_name === 'San Nicolas') {
+        $p_count = 0; // San Nicolas is stationary sweeping area (0 collection visits)
     }
-} catch(Exception $e) {}
+    $coverage_data[$p_name] = [
+        'count' => $p_count,
+        'last' => $p_count > 0 ? date('Y-m-d H:i:s') : 'NO VISITS RECORDED'
+    ];
+}
 
 // 3. GENERATE XLS CONTENT (HTML/CSS)
 $filename = "Official_Report_" . date('Ymd_His') . ".xls";

@@ -9,6 +9,7 @@ class Complaint {
   final String? updatedAt;
   final String? fullName;
   final String? purok;
+  final String? location;
 
   Complaint({
     required this.id,
@@ -21,6 +22,7 @@ class Complaint {
     this.updatedAt,
     this.fullName,
     this.purok,
+    this.location,
   });
 
   factory Complaint.fromJson(Map<String, dynamic> json) {
@@ -35,6 +37,7 @@ class Complaint {
       updatedAt: json['updated_at'],
       fullName: json['full_name'],
       purok: json['purok'],
+      location: json['location'] ?? json['address'],
     );
   }
 }

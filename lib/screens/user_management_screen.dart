@@ -21,7 +21,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _showHeaderShadow = true;
-  
+
   List<dynamic> _users = [];
   bool _isLoading = true;
   bool _isRefreshing = false;
@@ -30,13 +30,29 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
   late AnimationController _refreshRotationController;
   String _searchQuery = "";
   String _statusFilter = "All Status";
+  int _archivedSubTab = 0; // 0 for Archived Residents, 1 for Archived Drivers
+  String _sortOrder = "Pending First";
 
   final List<String> _statusOptions = ["All Status", "Active", "Pending Approval"];
+
+  bool _isUserPending(dynamic user) {
+    final String role = (user['role'] ?? '').toString().toLowerCase().trim();
+    if (role == 'resident' || role == 'admin') return false;
+    final String approvalStatus = (user['approval_status'] ?? '').toString().toLowerCase().trim();
+    return approvalStatus == 'pending';
+  }
+
+  bool _isUserArchived(dynamic user) {
+    if (_isUserPending(user)) return false;
+    final String accountStatus = (user['account_status'] ?? '').toString().toLowerCase();
+    final String isArchivedStr = (user['is_archived'] ?? '0').toString();
+    return accountStatus == 'archived' || isArchivedStr == '1' || isArchivedStr == 'true';
+  }
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _refreshRotationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 1),
@@ -122,10 +138,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
     }
   }
 
-  List<dynamic> _getFilteredUsers(String role) {
+  List<dynamic> _getFilteredUsers(String role, {bool showArchived = false}) {
     final List<dynamic> filtered = _users.where((user) {
-      final String userRole = user['role'].toString().toLowerCase();
-      final bool matchesRole = userRole == role.toLowerCase();
+      final String userRole = user['role'].toString().toLowerCase().trim();
+      final bool matchesRole = userRole == role.toLowerCase().trim();
       
       final String name = (user['name'] ?? "").toString().toLowerCase();
       final String email = (user['email'] ?? "").toString().toLowerCase();
@@ -135,24 +151,35 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
                                 email.contains(_searchQuery.toLowerCase()) ||
                                 username.contains(_searchQuery.toLowerCase());
 
-      final bool isPending = (user['is_archived'].toString() == '1' || user['is_archived'] == true);
+      final bool isArchived = _isUserArchived(user);
+      final bool isPending = _isUserPending(user);
+
+      if (showArchived) {
+        if (!isArchived) return false;
+      } else {
+        if (isArchived) return false;
+      }
+
       bool matchesStatus = true;
-      if (_statusFilter == "Pending Approval") {
-        matchesStatus = isPending;
-      } else if (_statusFilter == "Active") {
-        matchesStatus = !isPending;
+      if (!showArchived) {
+        if (_statusFilter == "Pending Approval") {
+          matchesStatus = isPending;
+        } else if (_statusFilter == "Active") {
+          matchesStatus = !isPending;
+        }
       }
                                 
       return matchesRole && matchesSearch && matchesStatus;
     }).toList();
 
-    // Sort: Pending users (is_archived == 1) always at the top
+    // Sort: Pending users first when not in archived view
     filtered.sort((a, b) {
-      final bool aPending = (a['is_archived'].toString() == '1' || a['is_archived'] == true);
-      final bool bPending = (b['is_archived'].toString() == '1' || b['is_archived'] == true);
-      
-      if (aPending && !bPending) return -1;
-      if (!aPending && bPending) return 1;
+      if (_sortOrder == "Pending First" && !showArchived) {
+        final bool aPending = _isUserPending(a);
+        final bool bPending = _isUserPending(b);
+        if (aPending && !bPending) return -1;
+        if (!aPending && bPending) return 1;
+      }
       return 0;
     });
 
@@ -165,7 +192,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
       builder: (context, constraints) {
         bool isMobile = constraints.maxWidth < 900;
         return Scaffold(
-          backgroundColor: const Color(0xFFF8F9FA), // Subtle gray background to make white cards pop
+          backgroundColor: const Color(0xFFF8F9FA),
           body: SafeArea(
             child: Stack(
               children: [
@@ -206,9 +233,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
                             : TabBarView(
                                 controller: _tabController,
                                 children: [
-                                  _buildUserList('resident'),
-                                  _buildUserList('driver'),
-                                  _buildUserList('admin'),
+                                  _buildUserList('resident', showArchived: false),
+                                  _buildUserList('driver', showArchived: false),
+                                  _buildUserList('admin', showArchived: false),
+                                  _buildArchivedTab(),
                                 ],
                               ),
                       ),
@@ -391,10 +419,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
 
   Widget _buildSearchBar() {
     final bool isDesktop = Responsive.isDesktop(context);
-    
+
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(24, 0, 24, isDesktop ? 20 : 8),
+      padding: EdgeInsets.fromLTRB(24, 0, 24, isDesktop ? 16 : 8),
       color: Colors.transparent,
       child: Center(
         child: Container(
@@ -493,7 +521,6 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
     );
   }
 
-
   Widget _buildTabBar() {
     return Container(
       width: double.infinity,
@@ -501,7 +528,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
       color: Colors.transparent,
       child: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
+          constraints: const BoxConstraints(maxWidth: 600),
           height: 50,
           decoration: BoxDecoration(
             color: const Color(0xFFF1F4F8),
@@ -534,12 +561,13 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
               ],
             ),
             dividerColor: Colors.transparent,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            labelStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5),
+            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
             tabs: const [
               Tab(text: "RESIDENTS"),
               Tab(text: "DRIVERS"),
               Tab(text: "ADMINS"),
+              Tab(text: "ARCHIVED"),
             ],
           ),
         ),
@@ -547,12 +575,65 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
     );
   }
 
-  Widget _buildUserList(String role) {
-    final filteredUsers = _getFilteredUsers(role);
+  Widget _buildArchivedTab() {
+    final String role = _archivedSubTab == 0 ? 'resident' : 'driver';
 
     return Column(
       children: [
         _buildSearchBar(),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildSubTabChip("Archived Residents", 0),
+              const SizedBox(width: 12),
+              _buildSubTabChip("Archived Drivers", 1),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildUserList(role, showArchived: true),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubTabChip(String label, int index) {
+    bool isSelected = _archivedSubTab == index;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _archivedSubTab = index;
+        });
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF00897B) : const Color(0xFFE0F2F1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : const Color(0xFF00796B),
+            fontWeight: FontWeight.w800,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserList(String role, {bool showArchived = false}) {
+    final filteredUsers = _getFilteredUsers(role, showArchived: showArchived);
+
+    return Column(
+      children: [
+        if (!showArchived) _buildSearchBar(),
         const SizedBox(height: 4),
         Expanded(
           child: AnimatedBuilder(
@@ -578,106 +659,232 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
                                 crossAxisCount: isWeb ? 2 : 1,
                                 crossAxisSpacing: 24,
                                 mainAxisSpacing: 20,
-                                mainAxisExtent: isWeb ? 210 : 165, // Significantly increased height for web cards to prevent bottom radius clipping/truncation
+                                mainAxisExtent: isWeb ? (showArchived ? 190 : 210) : (showArchived ? 165 : 180),
                               ),
                               itemCount: filteredUsers.length,
                               itemBuilder: (context, index) {
                                 final user = filteredUsers[index];
                                 final String displayRole = user['role'].toString().toUpperCase();
-                                final bool isPending = (user['is_archived'].toString() == '1' || user['is_archived'] == true);
+                                final String approvalStatus = (user['approval_status'] ?? '').toString().toLowerCase().trim();
+                                final bool isArchived = _isUserArchived(user);
+                                final bool isPending = _isUserPending(user);
 
                                 return Container(
                                   decoration: BoxDecoration(
                                     color: Colors.white,
-                                    borderRadius: BorderRadius.circular(28),
+                                    borderRadius: BorderRadius.circular(24),
                                     boxShadow: AppTheme.balancedPulidongShadow,
-                                    border: Border.all(color: Colors.grey.shade50, width: 1.5),
+                                    border: isPending
+                                        ? Border.all(color: const Color(0xFFFFB74D), width: 2.0)
+                                        : (isArchived
+                                            ? Border.all(color: const Color(0xFFFFCDD2), width: 1.5)
+                                            : Border.all(color: Colors.grey.shade100, width: 1.5)),
                                   ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 60,
-                                          height: 60,
-                                          decoration: BoxDecoration(
-                                            color: _getRoleBgColor(displayRole),
-                                            borderRadius: BorderRadius.circular(18),
-                                          ),
-                                          child: Icon(
-                                            Icons.person_rounded,
-                                            color: _getRoleColor(displayRole),
-                                            size: 26,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      user['name'] ?? "No Name",
-                                                      style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A), fontSize: 17, letterSpacing: -0.5),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: InkWell(
+                                      onTap: () => _showUserDetails(user),
+                                      borderRadius: BorderRadius.circular(24),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                // Two-digit number badge (01, 02, 03...)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                                  decoration: BoxDecoration(
+                                                    color: isArchived ? const Color(0xFFFFEBEE) : const Color(0xFFE0F2F1),
+                                                    borderRadius: BorderRadius.circular(10),
+                                                  ),
+                                                  child: Text(
+                                                    (index + 1).toString().padLeft(2, '0'),
+                                                    style: TextStyle(
+                                                      color: isArchived ? const Color(0xFFC62828) : const Color(0xFF00796B),
+                                                      fontWeight: FontWeight.w900,
+                                                      fontSize: 13,
+                                                      letterSpacing: -0.2,
                                                     ),
                                                   ),
-                                                  if (isPending)
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: const Color(0xFFFFF3E0),
-                                                        borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Container(
+                                                  width: 50,
+                                                  height: 50,
+                                                  decoration: BoxDecoration(
+                                                    color: _getRoleBgColor(displayRole),
+                                                    borderRadius: BorderRadius.circular(16),
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.person_rounded,
+                                                    color: _getRoleColor(displayRole),
+                                                    size: 26,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 14),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: [
+                                                      Row(
+                                                        children: [
+                                                          Expanded(
+                                                            child: Text(
+                                                              user['name'] ?? "No Name",
+                                                              style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A), fontSize: 16, letterSpacing: -0.3),
+                                                              maxLines: 1,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                          ),
+                                                          if (isArchived)
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                              decoration: BoxDecoration(
+                                                                color: const Color(0xFFFFEBEE),
+                                                                borderRadius: BorderRadius.circular(6),
+                                                              ),
+                                                              child: const Text(
+                                                                "ARCHIVED",
+                                                                style: TextStyle(color: Color(0xFFC62828), fontSize: 9, fontWeight: FontWeight.w900),
+                                                              ),
+                                                            )
+                                                          else if (isPending)
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                              decoration: BoxDecoration(
+                                                                color: const Color(0xFFFFF3E0),
+                                                                borderRadius: BorderRadius.circular(6),
+                                                                border: Border.all(color: const Color(0xFFFFB74D)),
+                                                              ),
+                                                              child: const Row(
+                                                                mainAxisSize: MainAxisSize.min,
+                                                                children: [
+                                                                  Icon(Icons.hourglass_top_rounded, size: 10, color: Color(0xFFE65100)),
+                                                                  SizedBox(width: 3),
+                                                                  Text(
+                                                                    "PENDING APPROVAL",
+                                                                    style: TextStyle(color: Color(0xFFE65100), fontSize: 8, fontWeight: FontWeight.w900),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            )
+                                                          else if (approvalStatus == 'approved')
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                              decoration: BoxDecoration(
+                                                                color: const Color(0xFFE8F5E9),
+                                                                borderRadius: BorderRadius.circular(6),
+                                                              ),
+                                                              child: const Text(
+                                                                "APPROVED",
+                                                                style: TextStyle(color: Color(0xFF2E7D32), fontSize: 8, fontWeight: FontWeight.w900),
+                                                              ),
+                                                            )
+                                                          else
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                              decoration: BoxDecoration(
+                                                                color: const Color(0xFFECEFF1),
+                                                                borderRadius: BorderRadius.circular(6),
+                                                              ),
+                                                              child: const Text(
+                                                                "Status not set",
+                                                                style: TextStyle(color: Color(0xFF546E7A), fontSize: 8, fontWeight: FontWeight.w700),
+                                                              ),
+                                                            ),
+                                                        ],
                                                       ),
-                                                      child: const Text(
-                                                        "PENDING",
-                                                        style: TextStyle(color: Color(0xFFE65100), fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        user['email'] ?? 'No Email',
+                                                        style: const TextStyle(fontSize: 12, color: Color(0xFF757575), fontWeight: FontWeight.w500),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
                                                       ),
+                                                      const SizedBox(height: 6),
+                                                      UnconstrainedBox(
+                                                        alignment: Alignment.centerLeft,
+                                                        child: Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                          decoration: BoxDecoration(
+                                                            color: const Color(0xFFF1F4F8),
+                                                            borderRadius: BorderRadius.circular(6),
+                                                          ),
+                                                          child: Text(
+                                                            "@${user['username'] ?? ''}",
+                                                            style: const TextStyle(fontSize: 11, color: Color(0xFF455A64), fontWeight: FontWeight.w800),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (isPending) ...[
+                                              const SizedBox(height: 10),
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.end,
+                                                children: [
+                                                  OutlinedButton.icon(
+                                                    onPressed: () => _showRejectConfirmation(user['user_id'], user['role'], user['name']),
+                                                    style: OutlinedButton.styleFrom(
+                                                      foregroundColor: const Color(0xFFD32F2F),
+                                                      side: const BorderSide(color: Color(0xFFFFCDD2)),
+                                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                      minimumSize: const Size(0, 32),
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                                     ),
+                                                    icon: const Icon(Icons.close_rounded, size: 14),
+                                                    label: const Text("Reject", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  ElevatedButton.icon(
+                                                    onPressed: () => _showApproveConfirmation(user['user_id'], user['role'], user['name']),
+                                                    style: ElevatedButton.styleFrom(
+                                                      backgroundColor: const Color(0xFF00897B),
+                                                      foregroundColor: Colors.white,
+                                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                                      minimumSize: const Size(0, 32),
+                                                      elevation: 0,
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                    ),
+                                                    icon: const Icon(Icons.check_circle_rounded, size: 14),
+                                                    label: Text(
+                                                      displayRole == 'DRIVER' ? "Approve Driver" : "Approve User",
+                                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                                                    ),
+                                                  ),
                                                 ],
                                               ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                user['email'] ?? 'No Email',
-                                                style: const TextStyle(fontSize: 12, color: Color(0xFF757575), fontWeight: FontWeight.w600),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              const SizedBox(height: 4),
+                                            ] else if (isArchived) ...[
+                                              const SizedBox(height: 10),
                                               Row(
+                                                mainAxisAlignment: MainAxisAlignment.end,
                                                 children: [
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFFF1F4F8),
-                                                      borderRadius: BorderRadius.circular(6),
+                                                  ElevatedButton.icon(
+                                                    onPressed: () => _showRestoreConfirmation(user['user_id'], user['role'], user['name']),
+                                                    style: ElevatedButton.styleFrom(
+                                                      backgroundColor: const Color(0xFF00897B),
+                                                      foregroundColor: Colors.white,
+                                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                                      minimumSize: const Size(0, 32),
+                                                      elevation: 0,
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                                     ),
-                                                    child: Text(
-                                                      "@${user['username'] ?? ''}",
-                                                      style: const TextStyle(fontSize: 10, color: Color(0xFF455A64), fontWeight: FontWeight.w800),
-                                                    ),
-                                                  ),
-                                                  const Spacer(),
-                                                  TextButton(
-                                                    onPressed: () => _showUserDetails(user),
-                                                    style: TextButton.styleFrom(
-                                                      foregroundColor: const Color(0xFF00897B),
-                                                      padding: EdgeInsets.zero,
-                                                      minimumSize: Size.zero,
-                                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                    ),
-                                                    child: const Text("VIEW PROFILE", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10, letterSpacing: 0.5)),
+                                                    icon: const Icon(Icons.unarchive_rounded, size: 14),
+                                                    label: const Text("Restore Account", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
                                                   ),
                                                 ],
                                               ),
                                             ],
-                                          ),
+                                          ],
                                         ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 );
@@ -728,7 +935,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
 
   void _showUserDetails(dynamic user) {
     final String role = user['role'].toString().toUpperCase();
-    final bool isPending = (user['is_archived'].toString() == '1' || user['is_archived'] == true);
+    final bool isArchived = _isUserArchived(user);
+    final bool isPending = _isUserPending(user);
     final bool isMobile = MediaQuery.of(context).size.width < 900;
     bool isModalLoading = true;
 
@@ -864,7 +1072,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
                         _buildDetailItem(
                           Icons.verified_user_outlined,
                           "Approval Status",
-                          isPending ? "Pending Approval" : "Approved & Active",
+                          isArchived
+                              ? "Archived"
+                              : (isPending
+                                  ? "Pending Approval"
+                                  : ((user['approval_status'] ?? '').toString().toLowerCase().trim() == 'approved' ? "Approved & Active" : "Status not set")),
                         ),
                         
                         if (isPending) ...[
@@ -903,6 +1115,38 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
                                 ),
                               ),
                             ],
+                          ),
+                        ] else if (isArchived) ...[
+                          const SizedBox(height: 32),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => _showRestoreConfirmation(user['user_id'], user['role'], user['name']),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF00897B),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(0, 60),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                elevation: 0,
+                              ),
+                              child: const Text("RESTORE ACCOUNT", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                            ),
+                          ),
+                        ] else if (role != 'ADMIN') ...[
+                          const SizedBox(height: 32),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => _showArchiveConfirmation(user['user_id'], user['role'], user['name']),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFFFECEC),
+                                foregroundColor: const Color(0xFFC62828),
+                                minimumSize: const Size(0, 60),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                elevation: 0,
+                              ),
+                              child: const Text("ARCHIVE ACCOUNT", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                            ),
                           ),
                         ],
                       ],
@@ -945,7 +1189,6 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
       final response = await _apiService.approveUser(int.parse(id.toString()), role.toString());
       if (response.data['success'] == true) {
         if (mounted) {
-          Navigator.pop(context); // Close modal
           CustomNotification.showTopNotification(context, "Account approved successfully!", false);
           _fetchUsers(); // Refresh list
         }
@@ -1094,12 +1337,160 @@ class _UserManagementScreenState extends State<UserManagementScreen> with Ticker
       final response = await _apiService.rejectUser(int.parse(id.toString()), role.toString());
       if (response.data['success'] == true) {
         if (mounted) {
-          Navigator.pop(context); // Close modal
           CustomNotification.showTopNotification(context, "Registration rejected and deleted.", false);
           _fetchUsers(); // Refresh list
         }
       } else {
         throw response.data['message'] ?? "Failed to reject user";
+      }
+    } catch (e) {
+      if (mounted) {
+        CustomNotification.showTopNotification(context, "Error: $e", true);
+      }
+    }
+  }
+
+  void _showArchiveConfirmation(dynamic id, dynamic role, String? name) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(32, 40, 32, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text("Archive Account?", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 16),
+                Text(
+                  "Are you sure you want to archive ${name ?? 'this user'}? The account will be moved to the Archived tab.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14, height: 1.5, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: const Text("CANCEL", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _archiveUser(id, role, true);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD32F2F),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 56),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 0,
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text("CONFIRM ARCHIVE", style: TextStyle(fontWeight: FontWeight.w900)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showRestoreConfirmation(dynamic id, dynamic role, String? name) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(32, 40, 32, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text("Restore Account?", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 16),
+                Text(
+                  "Are you sure you want to restore ${name ?? 'this user'}? The account will be moved back to the active list.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14, height: 1.5, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: const Text("CANCEL", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _archiveUser(id, role, false);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00897B),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 56),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 0,
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text("CONFIRM RESTORE", style: TextStyle(fontWeight: FontWeight.w900)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _archiveUser(dynamic id, dynamic role, bool archive) async {
+    try {
+      final response = await _apiService.archiveUser(int.parse(id.toString()), role.toString(), archive);
+      if (response.data['success'] == true) {
+        if (mounted) {
+          final String msg = archive ? "Account archived successfully!" : "Account restored successfully!";
+          CustomNotification.showTopNotification(context, msg, false);
+          _fetchUsers(); // Refresh list
+        }
+      } else {
+        throw response.data['message'] ?? "Failed to update account archive status";
       }
     } catch (e) {
       if (mounted) {

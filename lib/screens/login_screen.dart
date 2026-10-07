@@ -319,42 +319,52 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacementNamed(context, '/resident_dashboard', arguments: user);
         }
       } else {
-        bool userExists = false;
-        try {
-          final userCheck = await ApiService().checkUsername(username);
-          final emailCheck = await ApiService().checkEmail(username);
-          if (userCheck.data['success'] == true || emailCheck.data['success'] == true) {
-            userExists = true;
-          }
-        } catch (e) {
-          debugPrint("Account existence check error: $e");
-        }
-
-        if (userExists) {
-          final newStatus = await LoginSecurityManager.recordFailedAttempt(username);
-          _checkSecurityStatus();
+        final serverMessage = response.data['message']?.toString();
+        if (serverMessage != null && serverMessage.isNotEmpty && serverMessage != "Invalid username/email or password") {
           if (!mounted) return;
-          
-          String msg;
-          if (newStatus.isLocked) {
-            msg = AppLocalizations.get('err_account_locked_final');
-          } else {
-            msg = AppLocalizations.get('err_incorrect_password_attempts')
-                .replaceFirst('{attempts}', newStatus.remainingAttempts.toString());
-          }
-          
           CustomSnackBar.show(
             context,
-            message: msg,
+            message: serverMessage,
             isError: true,
           );
         } else {
-          if (!mounted) return;
-          CustomSnackBar.show(
-            context,
-            message: AppLocalizations.get('err_auth_failed'),
-            isError: true,
-          );
+          bool userExists = false;
+          try {
+            final userCheck = await ApiService().checkUsername(username);
+            final emailCheck = await ApiService().checkEmail(username);
+            if (userCheck.data['success'] == true || emailCheck.data['success'] == true) {
+              userExists = true;
+            }
+          } catch (e) {
+            debugPrint("Account existence check error: $e");
+          }
+
+          if (userExists) {
+            final newStatus = await LoginSecurityManager.recordFailedAttempt(username);
+            _checkSecurityStatus();
+            if (!mounted) return;
+
+            String msg;
+            if (newStatus.isLocked) {
+              msg = AppLocalizations.get('err_account_locked_final');
+            } else {
+              msg = AppLocalizations.get('err_incorrect_password_attempts')
+                  .replaceFirst('{attempts}', newStatus.remainingAttempts.toString());
+            }
+
+            CustomSnackBar.show(
+              context,
+              message: msg,
+              isError: true,
+            );
+          } else {
+            if (!mounted) return;
+            CustomSnackBar.show(
+              context,
+              message: AppLocalizations.get('err_auth_failed'),
+              isError: true,
+            );
+          }
         }
       }
     } catch (e) {

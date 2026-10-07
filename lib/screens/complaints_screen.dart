@@ -9,6 +9,7 @@ import '../utils/responsive.dart';
 import '../widgets/hover_action_button.dart';
 import '../utils/custom_notification.dart';
 import '../widgets/custom_snackbar.dart';
+import '../services/service_area_service.dart';
 
 class ComplaintsScreen extends StatefulWidget {
   final bool isEmbedded;
@@ -40,14 +41,18 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
   final TextEditingController _driverSearchController = TextEditingController();
   String _residentStatusFilter = "All Status";
   String _residentCategoryFilter = "All Categories";
+  String _residentLocationFilter = "All Locations";
   DateTime? _residentDateFilter;
   String _driverStatusFilter = "All Status";
   String _driverCategoryFilter = "All Categories";
   DateTime? _driverDateFilter;
 
   final List<String> _residentCategories = ["All Categories", "Uncollected Garbage", "Spilled Waste", "Driver Behavior", "Schedule Issue", "Other"];
+  final List<String> _locationOptions = ["All Locations", ...ServiceAreaService.documentedAreaNames];
   final List<String> _driverCategories = ["All Categories", "Engine", "Tires", "Brakes", "GPS", "Electrical", "Fuel", "Transmission", "Hydraulic System", "Body Damage", "Other"];
   final List<String> _statusOptions = ["All Status", "Pending", "In Progress", "Resolved"];
+
+  String _canonicalizeAreaName(String? raw) => ServiceAreaService.canonicalizeAreaName(raw) ?? raw ?? "";
 
   @override
   void initState() {
@@ -321,14 +326,13 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
         width: 44,
         height: 44,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F5F5),
+        decoration: const BoxDecoration(
+          color: Color(0xFFF1F5F9),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
         ),
         child: Icon(
           isMobile ? Icons.menu_rounded : Icons.arrow_back_ios_new_rounded,
-          color: const Color(0xFF1A1A1A),
+          color: const Color(0xFF1E293B),
           size: isMobile ? 22 : 18,
         ),
       ),
@@ -336,65 +340,15 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
   }
 
   Widget _buildHeader(bool isMobile) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    if (!isMobile) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            if (_showHeaderShadow)
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 15,
-                offset: const Offset(0, 4),
-              )
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE0F2F1),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(Icons.chat_bubble_rounded, color: Color(0xFF00796B), size: 28),
-            ),
-            const SizedBox(width: 20),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Resolve Radar",
-                    style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF1A1A1A),
-                        letterSpacing: -0.5)),
-                Text("Comprehensive incident and complaint management",
-                    style: TextStyle(
-                        color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
-              ],
-            ),
-            const Spacer(),
-          ],
-        ),
-      );
-    }
-
-    final double titleFontSize = (screenWidth * 0.055).clamp(18.0, 22.0);
-    final double subtitleFontSize = (screenWidth * 0.03).clamp(10.0, 12.0);
-    final double iconContainerSize = (screenWidth * 0.12).clamp(40.0, 48.0);
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: const Color(0xFFEEEEEE), width: _showHeaderShadow ? 0 : 1)),
+        border: Border(bottom: BorderSide(color: const Color(0xFFF1F5F9), width: _showHeaderShadow ? 0 : 1)),
         boxShadow: [
           if (_showHeaderShadow)
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 10,
               offset: const Offset(0, 4),
             )
@@ -403,21 +357,44 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
       child: Row(
         children: [
           _buildCircularBackButton(),
-          const SizedBox(width: 12),
-          Expanded(
+          const SizedBox(width: 14),
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Resolve Radar", style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.w900, color: const Color(0xFF1A1A1A), letterSpacing: -0.5)),
-                Text("Manage system complaints", style: TextStyle(fontSize: subtitleFontSize, color: const Color(0xFF757575), fontWeight: FontWeight.w600)),
+                Text(
+                  "Resolve Radar",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  "Manage system complaints",
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
           Container(
-            width: iconContainerSize,
-            height: iconContainerSize,
-            decoration: BoxDecoration(color: const Color(0xFFF5F5F5), borderRadius: BorderRadius.circular(12)),
-            child: const Icon(Icons.chat_bubble_rounded, color: Color(0xFF00796B), size: 24),
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE6F4F1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.chat_bubble_rounded,
+              color: Color(0xFF007A63),
+              size: 20,
+            ),
           ),
         ],
       ),
@@ -427,48 +404,41 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
   Widget _buildTabBar() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       color: Colors.transparent, 
       child: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 500),
-          height: 50,
+          height: 48,
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: const Color(0xFFF1F4F8),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade100, width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF00897B).withOpacity(0.15),
-                blurRadius: 15,
-                offset: const Offset(0, 6),
-              )
-            ],
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(14),
           ),
           child: TabBar(
             controller: _tabController,
             overlayColor: WidgetStateProperty.all(Colors.transparent),
             splashFactory: NoSplash.splashFactory,
             labelColor: Colors.white,
-            unselectedLabelColor: Colors.grey.shade600,
+            unselectedLabelColor: const Color(0xFF475569),
             indicatorSize: TabBarIndicatorSize.tab,
             indicator: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: const Color(0xFF00897B),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF00897B).withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                )
-              ],
+              borderRadius: BorderRadius.circular(10),
+              color: const Color(0xFF007A63),
             ),
             dividerColor: Colors.transparent,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            labelStyle: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              letterSpacing: 0.3,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
             tabs: [
               Tab(text: "RESIDENTS (${_residentComplaints.length})"),
-              Tab(text: "DRIVERS (${_driverIssues.length})")
+              Tab(text: "DRIVERS (${_driverIssues.length})"),
             ],
           ),
         ),
@@ -483,13 +453,27 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
     List<dynamic> filteredList = rawList.where((item) {
       if (isResident) {
         final String name = (item['full_name'] ?? "").toString().toLowerCase();
-        final String category = (item['category'] ?? "").toString();
+        final String category = (item['category'] ?? "").toString().toLowerCase();
+        final String description = (item['description'] ?? "").toString().toLowerCase();
+        final String rawPurok = (item['purok'] ?? "").toString();
+        final String rawLocation = (item['location'] ?? "").toString();
+        final String canonicalPurok = _canonicalizeAreaName(rawPurok.isNotEmpty && rawPurok != "Unknown" ? rawPurok : rawLocation);
         final String status = _normalizeStatus((item['status'] ?? "").toString());
-        final String search = _residentSearchController.text.toLowerCase();
+        final String search = _residentSearchController.text.toLowerCase().trim();
         
-        bool matchName = name.contains(search);
-        bool matchCategory = _residentCategoryFilter == "All Categories" || category == _residentCategoryFilter;
+        bool matchSearch = search.isEmpty ||
+            name.contains(search) ||
+            category.contains(search) ||
+            description.contains(search) ||
+            rawPurok.toLowerCase().contains(search) ||
+            rawLocation.toLowerCase().contains(search);
+
+        bool matchCategory = _residentCategoryFilter == "All Categories" || (item['category'] ?? "").toString() == _residentCategoryFilter;
         bool matchStatus = _residentStatusFilter == "All Status" || status.toLowerCase() == _residentStatusFilter.toLowerCase();
+        bool matchLocation = _residentLocationFilter == "All Locations" ||
+            canonicalPurok.toLowerCase() == _residentLocationFilter.toLowerCase() ||
+            rawPurok.toLowerCase().contains(_residentLocationFilter.toLowerCase()) ||
+            rawLocation.toLowerCase().contains(_residentLocationFilter.toLowerCase());
         bool matchDate = true;
         if (_residentDateFilter != null) {
           final String itemDateStr = (item['created_at'] ?? "").toString();
@@ -501,17 +485,23 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
                 itemDate.day == _residentDateFilter!.day;
           }
         }
-        return matchName && matchCategory && matchStatus && matchDate;
+        return matchSearch && matchCategory && matchStatus && matchLocation && matchDate;
       } else {
         final String truckId = (item['truckId'] ?? "").toString().toLowerCase();
         final String driverName = (item['driverName'] ?? "").toString().toLowerCase();
+        final String issueType = (item['issueType'] ?? "").toString().toLowerCase();
+        final String description = (item['description'] ?? "").toString().toLowerCase();
         final String status = _normalizeStatus((item['status'] ?? "").toString());
-        final String issueType = (item['issueType'] ?? "").toString();
-        final String search = _driverSearchController.text.toLowerCase();
+        final String search = _driverSearchController.text.toLowerCase().trim();
         
-        bool matchSearch = truckId.contains(search) || driverName.contains(search);
+        bool matchSearch = search.isEmpty ||
+            truckId.contains(search) ||
+            driverName.contains(search) ||
+            issueType.contains(search) ||
+            description.contains(search);
+
         bool matchStatus = _driverStatusFilter == "All Status" || status.toLowerCase() == _driverStatusFilter.toLowerCase();
-        bool matchCategory = _driverCategoryFilter == "All Categories" || issueType == _driverCategoryFilter;
+        bool matchCategory = _driverCategoryFilter == "All Categories" || (item['issueType'] ?? "").toString() == _driverCategoryFilter;
         bool matchDate = true;
         if (_driverDateFilter != null) {
           final dynamic rawTs = item['createdAt'];
@@ -553,21 +543,34 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
                     : LayoutBuilder(
                         builder: (context, boxConstraints) {
                           final bool isWeb = boxConstraints.maxWidth > 900;
-                          return GridView.builder(
+                          if (isWeb) {
+                            return GridView.builder(
+                              controller: _scrollController,
+                              physics: (_manualPullDepth > 0 || _isRefreshing)
+                                  ? const NeverScrollableScrollPhysics()
+                                  : const ClampingScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 12,
+                                mainAxisExtent: 185,
+                              ),
+                              itemCount: filteredList.length,
+                              itemBuilder: (context, i) {
+                                return _buildCard(filteredList[i], i, isResident);
+                              },
+                            );
+                          }
+                          return ListView.builder(
                             controller: _scrollController,
                             physics: (_manualPullDepth > 0 || _isRefreshing) 
                                 ? const NeverScrollableScrollPhysics() 
                                 : const ClampingScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(24, 12, 24, 100),
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: isWeb ? 2 : 1,
-                              crossAxisSpacing: 24,
-                              mainAxisSpacing: 20,
-                              mainAxisExtent: isWeb ? 290 : 265, // Increased height for web/desktop grid layout to avoid clipping/cutting bottom curves
-                            ),
+                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
                             itemCount: filteredList.length,
                             itemBuilder: (context, i) {
-                              return _buildCard(filteredList[i], isResident);
+                              return _buildCard(filteredList[i], i, isResident);
                             },
                           );
                         }
@@ -591,10 +594,11 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
 
   Widget _buildSearchAndFilterBar(bool isResident) {
     final bool isDesktop = Responsive.isDesktop(context);
-    
+    final bool isSmall = MediaQuery.of(context).size.width < 600;
+
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(24, 0, 24, isDesktop ? 20 : 8),
+      padding: EdgeInsets.fromLTRB(isSmall ? 16 : 24, 0, isSmall ? 16 : 24, isDesktop ? 20 : 8),
       color: Colors.transparent, 
       child: Center(
         child: Container(
@@ -602,32 +606,25 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
           padding: isDesktop ? const EdgeInsets.all(16) : EdgeInsets.zero,
           decoration: isDesktop ? BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(28), // Matches cards
+            borderRadius: BorderRadius.circular(24),
             boxShadow: AppTheme.balancedPulidongShadow,
             border: Border.all(color: Colors.grey.shade50, width: 1.5),
           ) : null,
-          child: isDesktop 
-            ? Row(
-                children: [
-                  Expanded(flex: 3, child: _buildSearchBar(isResident)),
-                  const SizedBox(width: 16),
-                  _buildFilters(isResident),
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSearchBar(isResident),
-                  const SizedBox(height: 12),
-                  _buildFilters(isResident),
-                ],
-              ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSearchBar(isResident),
+              const SizedBox(height: 12),
+              _buildFilters(isResident),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildSearchBar(bool isResident) {
+    final bool isSmall = MediaQuery.of(context).size.width < 600;
     return Container(
       height: 48,
       decoration: BoxDecoration(
@@ -639,10 +636,10 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
         controller: isResident ? _residentSearchController : _driverSearchController,
         onChanged: (_) => setState(() {}),
         cursorColor: Colors.black54,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF1A1A1A)),
         decoration: InputDecoration(
-          hintText: isResident ? "Search resident name..." : "Search driver or truck...",
-          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+          hintText: isResident ? (isSmall ? "Search resident..." : "Search resident name...") : (isSmall ? "Search driver..." : "Search driver or truck..."),
+          hintStyle: const TextStyle(color: Color(0xFFBDBDBD), fontSize: 13),
           prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00897B), size: 20),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -653,19 +650,26 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
 
   Widget _buildFilters(bool isResident) {
     final bool isDesktop = Responsive.isDesktop(context);
-    final double spacing = isDesktop ? 16.0 : 12.0;
+    final double spacing = isDesktop ? 20.0 : 16.0;
 
     List<Widget> children = [];
     if (isResident) {
       children = [
         _buildDropdownFilter(
-            Icons.category_rounded, 
+            Icons.alt_route_rounded,
             _residentCategoryFilter, 
             _residentCategories, 
             (val) => setState(() => _residentCategoryFilter = val)
           ),
           SizedBox(width: spacing),
-          _filterChip(Icons.calendar_today_rounded, _residentDateFilter == null ? "All Dates" : DateFormat('MMM dd, yyyy').format(_residentDateFilter!), onTap: () => _showDatePicker(true)),
+          _buildDropdownFilter(
+            Icons.location_on_rounded,
+            _residentLocationFilter,
+            _locationOptions,
+            (val) => setState(() => _residentLocationFilter = val)
+          ),
+          SizedBox(width: spacing),
+          _filterChip(Icons.calendar_today_outlined, _residentDateFilter == null ? "All Dates" : DateFormat('MMM dd, yyyy').format(_residentDateFilter!), onTap: () => _showDatePicker(true)),
           SizedBox(width: spacing),
           _buildDropdownFilter(
             Icons.info_outline_rounded, 
@@ -677,13 +681,13 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
     } else {
       children = [
         _buildDropdownFilter(
-            Icons.category_rounded, 
+            Icons.alt_route_rounded,
             _driverCategoryFilter, 
             _driverCategories, 
             (val) => setState(() => _driverCategoryFilter = val)
           ),
           SizedBox(width: spacing),
-          _filterChip(Icons.calendar_today_rounded, _driverDateFilter == null ? "All Dates" : DateFormat('MMM dd, yyyy').format(_driverDateFilter!), onTap: () => _showDatePicker(false)),
+          _filterChip(Icons.calendar_today_outlined, _driverDateFilter == null ? "All Dates" : DateFormat('MMM dd, yyyy').format(_driverDateFilter!), onTap: () => _showDatePicker(false)),
           SizedBox(width: spacing),
           _buildDropdownFilter(
             Icons.info_outline_rounded, 
@@ -705,15 +709,11 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
   }
 
   Widget _buildDropdownFilter(IconData icon, String currentVal, List<String> options, Function(String) onSelect) {
-    final bool isDesktop = Responsive.isDesktop(context);
-    final double fontSize = isDesktop ? 13 : 11.5;
-    final double iconSize = isDesktop ? 18 : 16;
-
     return PopupMenuButton<String>(
       onSelected: onSelect,
-      offset: const Offset(0, 40),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 8,
+      offset: const Offset(0, 36),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: 6,
       color: Colors.white,
       itemBuilder: (context) => options.map((opt) {
         bool isSelected = opt == currentVal;
@@ -723,15 +723,15 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
             children: [
               Icon(
                 isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
-                size: 18,
-                color: isSelected ? const Color(0xFF00897B) : Colors.grey.shade400,
+                size: 16,
+                color: isSelected ? const Color(0xFF007A63) : Colors.grey.shade400,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Text(
                 opt,
                 style: TextStyle(
-                  fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
-                  color: isSelected ? const Color(0xFF00897B) : const Color(0xFF2C3E50),
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? const Color(0xFF007A63) : const Color(0xFF1E293B),
                   fontSize: 13,
                 ),
               ),
@@ -742,31 +742,27 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: iconSize, color: const Color(0xFF00796B)),
-          const SizedBox(width: 8),
-          Text(currentVal, style: TextStyle(fontWeight: FontWeight.w800, fontSize: fontSize, color: const Color(0xFF1A1A1A))),
-          const SizedBox(width: 4),
-          Icon(Icons.arrow_drop_down_rounded, size: iconSize + 2, color: Colors.grey),
+          Icon(icon, size: 16, color: const Color(0xFF007A63)),
+          const SizedBox(width: 6),
+          Text(currentVal, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0F172A))),
+          const SizedBox(width: 2),
+          const Icon(Icons.arrow_drop_down_rounded, size: 18, color: Color(0xFF64748B)),
         ],
       ),
     );
   }
 
   Widget _filterChip(IconData icon, String label, {VoidCallback? onTap}) {
-    final bool isDesktop = Responsive.isDesktop(context);
-    final double fontSize = isDesktop ? 13 : 11.5;
-    final double iconSize = isDesktop ? 18 : 16;
-
     return GestureDetector(
       onTap: onTap,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: iconSize, color: const Color(0xFF00796B)),
-          const SizedBox(width: 8),
-          Text(label, style: TextStyle(fontWeight: FontWeight.w800, fontSize: fontSize, color: const Color(0xFF1A1A1A))),
-          const SizedBox(width: 4),
-          Icon(Icons.arrow_drop_down_rounded, size: iconSize + 2, color: Colors.grey),
+          Icon(icon, size: 16, color: const Color(0xFF007A63)),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0F172A))),
+          const SizedBox(width: 2),
+          const Icon(Icons.arrow_drop_down_rounded, size: 18, color: Color(0xFF64748B)),
         ],
       ),
     );
@@ -798,133 +794,228 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
   }
 
 
-  Widget _buildCard(dynamic c, bool isResident) {
+  Widget _buildCard(dynamic c, int index, bool isResident) {
     String status = (c['status'] ?? 'PENDING').toString().toUpperCase().replaceAll('_', ' ');
-    Color statusColor = Colors.orange;
-    if (status == 'RESOLVED') statusColor = Colors.green;
-    if (status == 'IN PROGRESS' || status == 'UNDER REVIEW') statusColor = Colors.blue;
+    if (status == 'SUBMITTED') status = 'PENDING';
+
+    Color statusBgColor = const Color(0xFFFEF3C7);
+    Color statusTextColor = const Color(0xFFB45309);
+
+    if (status == 'RESOLVED' || status == 'COMPLETED') {
+      status = 'RESOLVED';
+      statusBgColor = const Color(0xFFDCFCE7);
+      statusTextColor = const Color(0xFF15803D);
+    } else if (status == 'IN PROGRESS' || status == 'UNDER REVIEW') {
+      status = 'IN PROGRESS';
+      statusBgColor = const Color(0xFFE0F2FE);
+      statusTextColor = const Color(0xFF0369A1);
+    }
 
     String title = isResident ? (c['category'] ?? "General") : (c['issueType'] ?? "Truck Issue");
     String reporter = isResident ? (c['full_name'] ?? 'Resident') : (c['driverName'] ?? 'Driver');
     String description = (c['description'] ?? "").toString();
-    String truckInfo = !isResident ? "${c['truckId'] ?? 'N/A'}" : "";
-    String date = isResident 
-        ? (c['created_at'] ?? '') 
-        : DateFormat('MMM dd, yyyy • h:mm a').format(DateTime.fromMillisecondsSinceEpoch(c['createdAt'] ?? 0));
+    String truckInfo = !isResident ? "Truck ${c['truckId'] ?? 'N/A'}" : "";
 
-    IconData issueIcon = isResident ? Icons.report_problem_rounded : Icons.engineering_rounded;
-    if (title.toLowerCase().contains('garbage')) issueIcon = Icons.delete_sweep_rounded;
-    if (title.toLowerCase().contains('spill')) issueIcon = Icons.water_drop_rounded;
-    if (title.toLowerCase().contains('behavior')) issueIcon = Icons.person_off_rounded;
+    String date = "";
+    if (isResident) {
+      date = (c['created_at'] ?? '').toString();
+    } else {
+      final dynamic rawTs = c['createdAt'];
+      if (rawTs != null) {
+        final DateTime dt = DateTime.fromMillisecondsSinceEpoch(rawTs is int ? rawTs : int.parse(rawTs.toString()));
+        date = DateFormat('yyyy-MM-dd HH:mm:ss').format(dt);
+      }
+    }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
         boxShadow: AppTheme.balancedPulidongShadow,
         border: Border.all(color: Colors.grey.shade50, width: 1.5),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Top Info Row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: (isResident ? const Color(0xFFE0F2F1) : const Color(0xFFE3F2FD)),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Icon(issueIcon, color: isResident ? const Color(0xFF00796B) : const Color(0xFF1976D2), size: 24),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(28),
+        child: InkWell(
+          onTap: () => _showDetailsModal(c, isResident),
+          borderRadius: BorderRadius.circular(28),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top Row: Number Badge | Avatar Icon Box | Title, Reporter, Description | Status Badge
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, 
-                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF1A1A1A), letterSpacing: -0.2)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    // Two-digit number badge (01, 02, 03...)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2F1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        (index + 1).toString().padLeft(2, '0'),
+                        style: const TextStyle(
+                          color: Color(0xFF00796B),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Avatar Icon Box
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE6F4F1),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Color(0xFF00796B),
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    // Content Area
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16.5,
+                              color: Color(0xFF1A1A1A),
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              const Icon(Icons.person, size: 14, color: Color(0xFF64748B)),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  isResident ? reporter : "$reporter ($truckInfo)",
+                                  style: const TextStyle(
+                                    color: Color(0xFF475569),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (isResident && (c['purok'] != null || c['location'] != null)) ...[
+                            const SizedBox(height: 3),
+                            Row(
+                              children: [
+                                const Icon(Icons.location_on_rounded, size: 14, color: Color(0xFF00897B)),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    "Location: ${c['purok'] ?? 'N/A'}${c['location'] != null && c['location'] != c['purok'] ? ' • ${c['location']}' : ''}",
+                                    style: const TextStyle(
+                                      color: Color(0xFF00796B),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (description.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Status Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusBgColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          color: statusTextColor,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const Divider(height: 1, color: Color(0xFFF1F4F8)),
+                const SizedBox(height: 12),
+                // Bottom Row: Clock & Date | View details >
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
                       children: [
-                        _reporterPill(reporter, Icons.person_rounded),
-                        if (!isResident)
-                          _reporterPill(truckInfo, Icons.local_shipping_rounded, isTruck: true),
+                        const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF94A3B8)),
+                        const SizedBox(width: 5),
+                        Text(
+                          date,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Text(
+                          "View details",
+                          style: TextStyle(
+                            color: Color(0xFF007A63),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          size: 16,
+                          color: Color(0xFF007A63),
+                        ),
                       ],
                     ),
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _buildStatusBadge(status, statusColor),
-                  if (!isResident) ...[
-                    const SizedBox(height: 8),
-                    _buildUrgencyBadge(c['urgency'] ?? 'Medium'),
-                  ],
-                ],
-              ),
-            ],
-          ),
-          
-          const Padding(
-            padding: EdgeInsets.only(top: 8, bottom: 12),
-            child: Divider(height: 1, color: Color(0xFFF1F4F8)),
-          ),
-
-          const Text("REPORT DESCRIPTION", 
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1.2)),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FA),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFEEF2F6)),
+              ],
             ),
-            child: Text(description, 
-              maxLines: 2, 
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF424242), fontSize: 13, height: 1.4, fontWeight: FontWeight.w500)),
           ),
-          const SizedBox(height: 12),
-
-          const Spacer(),
-
-          // Bottom Metadata & Actions
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Text(date, style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w700)),
-                ],
-              ),
-              TextButton(
-                onPressed: () => _showDetailsModal(c, isResident),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF00897B),
-                  backgroundColor: const Color(0xFFE0F2F1).withOpacity(0.5),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  splashFactory: NoSplash.splashFactory,
-                  overlayColor: Colors.transparent,
-                ),
-                child: const Text("VIEW DETAILS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.8)),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1057,6 +1148,10 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> with TickerProvider
                         _buildInfoSection("DESCRIPTION", isResident ? (item['description'] ?? '') : (item['description'] ?? '')),
                         const SizedBox(height: 12),
                         _buildInfoSection("REPORTER", isResident ? (item['full_name'] ?? 'Unknown') : (item['driverName'] ?? 'Unknown')),
+                        if (isResident) ...[
+                          _buildInfoSection("PUROK / AREA", item['purok'] ?? 'N/A'),
+                          _buildInfoSection("SPECIFIC LOCATION", item['location'] ?? item['address'] ?? 'N/A'),
+                        ],
                         if (!isResident) _buildInfoSection("TRUCK ID", item['truckId'] ?? 'N/A'),
                         _buildInfoSection("CATEGORY / ISSUE", isResident ? (item['category'] ?? 'General') : (item['issueType'] ?? 'N/A')),
                         if (!isResident) _buildInfoSection("URGENCY", (item['urgency'] ?? 'Medium').toString().toUpperCase(), color: _getUrgencyColor(item['urgency'])),

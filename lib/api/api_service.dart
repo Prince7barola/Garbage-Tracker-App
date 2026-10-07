@@ -45,16 +45,22 @@ class ApiService {
     }));
   }
 
-  Future<Response> fileComplaint(String residentId, String category, String description) async {
+  Future<Response> fileComplaint(String residentId, String category, String description, {String? purok, String? location}) async {
     return await _dio.post('file_complaint.php', data: FormData.fromMap({
       'resident_id': residentId,
       'category': category,
       'description': description,
+      if (purok != null) 'purok': purok,
+      if (location != null) 'location': location,
     }));
   }
 
   Future<Response> getLocations() async {
     return await _dio.get('get_locations.php');
+  }
+
+  Future<Response> getOperationalInsights() async {
+    return await _dio.get('get_operational_insights.php');
   }
 
   Future<Response> getAccessLogs() async {
@@ -298,6 +304,14 @@ class ApiService {
     return await _dio.post('delete_user.php', data: {
       'user_id': userId,
       'role': role,
+    });
+  }
+
+  Future<Response> archiveUser(int userId, String role, bool archive) async {
+    return await _dio.post('archive_user.php', data: {
+      'user_id': userId,
+      'role': role,
+      'is_archived': archive ? 1 : 0,
     });
   }
 }

@@ -351,19 +351,58 @@ class ServiceAreaService {
     ),
   ];
 
-  /// List of official display names for resident registration & dropdowns
+  /// List of official display names for resident registration & dropdowns in exact order
   static final List<String> documentedAreaNames = [
+    'Ayala Highway (Almarius to Fat Grill)',
+    'Brixton Homes',
     'Central (Purok 1)',
     'Purok 2',
     'Purok 3',
-    'Purok 4',
+    'Purok 4 / El Pueblo',
     'Purok Paraiso',
     'Riverside',
-    'Brixton Homes',
-    'T.M. Kalaw Street',
-    'Ayala Highway (Almarius to Fat Grill)',
     'San Nicolas',
+    'T.M. Kalaw Street',
   ];
+
+  static String? canonicalizeAreaName(String? raw) {
+    if (raw == null) return null;
+    final s = raw.toLowerCase().trim();
+    if (s.isEmpty || s == "unknown" || s == "n/a" || s == "none") {
+      return null;
+    }
+    if (s.contains("ayala") || s.contains("almarius") || s.contains("fat grill") || s.contains("almaris")) {
+      return "Ayala Highway (Almarius to Fat Grill)";
+    }
+    if (s.contains("brixton")) {
+      return "Brixton Homes";
+    }
+    if (s.contains("central") || s == "purok 1" || s == "p1") {
+      return "Central (Purok 1)";
+    }
+    if (s == "purok 2" || s == "p2") {
+      return "Purok 2";
+    }
+    if (s == "purok 3" || s == "p3" || s.contains("dos riles") || s.contains("purok tres")) {
+      return "Purok 3";
+    }
+    if (s.contains("purok 4") || s.contains("el pueblo") || s == "p4" || s.contains("elpueblo")) {
+      return "Purok 4 / El Pueblo";
+    }
+    if (s.contains("paraiso") || s.contains("sweeping")) {
+      return "Purok Paraiso";
+    }
+    if (s.contains("riverside")) {
+      return "Riverside";
+    }
+    if (s.contains("san nicolas")) {
+      return "San Nicolas";
+    }
+    if (s.contains("kalaw") || s.contains("t.m.")) {
+      return "T.M. Kalaw Street";
+    }
+    return null;
+  }
 
   /// Ensures that 'puroks' in Firebase RTDB is updated with the latest authoritative Balintawak service areas
   Future<void> ensureInitialized() async {

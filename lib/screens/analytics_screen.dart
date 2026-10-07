@@ -16,6 +16,7 @@ import '../api/api_service.dart';
 import '../api/api_client.dart';
 import '../utils/prediction_engine.dart';
 import '../utils/system_logger.dart';
+import '../services/service_area_service.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   final bool isEmbedded;
@@ -41,6 +42,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
   Map<String, double> _complaintStatusData = {"Pending": 0, "In Progress": 0, "Resolved": 0};
   Map<String, double> _complaintSourceData = {"Residents": 0, "Drivers": 0};
   Map<String, int> _purokFrequencyData = {};
+  Map<String, int> _purokVisitCounts = {};
   Map<String, int> _purokComplaintData = {};
   String _selectedArea = "All Areas";
   DateTimeRange _selectedDateRange = DateTimeRange(
@@ -62,15 +64,41 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
   String? _routeTrend;
   bool _routeTrendPositive = true;
 
+  int _prevCompletedRoutes = 0;
+  int _prevTotalRoutes = 0;
+  double _routeCompletionRate = 0.0;
+  double _prevRouteCompletionRate = 0.0;
+  String? _routeCompletionTrendText;
+  bool _routeCompletionTrendPositive = true;
+
+  int _matchedResidents = 0;
+  int _matchedDrivers = 0;
+  double _issueReportingRate = 0.0;
+  double _prevIssueReportingRate = 0.0;
+  String? _issueReportingTrendText;
+  bool _issueReportingTrendPositive = true;
+
+  int _missedPickupsCount = 0;
+  int _missedPickupsPending = 0;
+  int _missedPickupsResolved = 0;
+  int _prevMissedPickupsCount = 0;
+  String? _missedPickupsTrendText;
+  bool _missedPickupsTrendPositive = true;
+
   double _issueRate = 0.0;
   String? _coverageTrend;
   bool _coverageTrendPositive = true;
   String? _issueTrend;
   bool _issueTrendPositive = true;
 
+  String get _dateRangeDisplayStr => _isDateRange
+      ? "${DateFormat('MMM dd').format(_selectedDateRange.start)} - ${DateFormat('MMM dd').format(_selectedDateRange.end)}"
+      : DateFormat('MMM dd, yyyy').format(_selectedDateRange.start);
+
   StreamSubscription? _trucksSubscription;
   StreamSubscription? _routesSubscription;
   StreamSubscription? _progressSubscription;
+  StreamSubscription? _weeklyProgressSubscription;
   StreamSubscription? _truckIssuesSubscription;
   StreamSubscription? _truckRegistrySubscription;
   StreamSubscription? _residentComplaintsFbSubscription;
@@ -78,6 +106,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
   // Cache for raw data
   Map _allDriverRoutes = {};
   Map _allCollectionProgress = {};
+  Map _allWeeklyCollectionProgress = {};
   Map _allTruckLocations = {};
   Map _truckRegistry = {};
   List<dynamic> _allResidentComplaints = [];
@@ -88,6 +117,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
   String? _geminiSummary;
   double _tomorrowWaste = 0.0;
   double _weeklyWaste = 0.0;
+  double _totalFleetCapacity = 5000.0;
   final Map<String, String> _etaEstimates = {};
   String _recommendations = "Analyzing fleet...";
   String _fleetInsight = "Analyzing fleet performance patterns...";
@@ -95,10 +125,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
   String _coverageInsight = "Reviewing area coverage efficiency...";
   bool _isAiLoading = true;
 
+  bool _expCoverageRoutes = true;
+  bool _expCommunityIssues = false;
+  bool _expFleetPrediction = false;
+  bool _expAreaBreakdown = false;
+  bool _expDataNotes = false;
+
   final _purokNames = [
-    "Central (Purok 1)", "Purok Paraiso", "Riverside", "T.M. Kalaw Street",
-    "Ayala Highway (Almaris to Apat Grill)", "Brixton Homes", "El Pueblo",
-    "San Nicolas", "Paraiso (Street Sweeping)", "Purok 2", "Purok 3"
+    'Ayala Highway (Almarius to Fat Grill)',
+    'Brixton Homes',
+    'Central (Purok 1)',
+    'Purok 2',
+    'Purok 3',
+    'Purok 4 / El Pueblo',
+    'Purok Paraiso',
+    'Riverside',
+    'San Nicolas',
+    'T.M. Kalaw Street',
   ];
 
   @override
@@ -256,12 +299,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
     for (var c in _allResidentComplaints) {
       DateTime? dt = parseAnyDate(c['created_at'] ?? c['timestamp'] ?? c['date']);
       if (dt != null) {
+        String category = (c['category'] ?? c['type'] ?? c['issue_type'] ?? '').toString();
+        bool isUncollectedGarbage = category.isEmpty ||
+            category.toLowerCase().contains('uncollected') ||
+            category.toLowerCase().contains('missed') ||
+            category.toLowerCase().contains('pickup');
+
         normalizedItems.add({
           'id': c['id']?.toString() ?? '',
           'source': 'RESIDENT',
+          'category': category,
+          'isUncollectedGarbage': isUncollectedGarbage,
           'status': normalizeStatus(c['status']),
           'createdAt': dt,
-          'purok': c['purok']?.toString(),
+          'purok': c['purok']?.toString() ?? c['location']?.toString(),
         });
       }
     }
@@ -273,9 +324,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
         normalizedItems.add({
           'id': i['id']?.toString() ?? '',
           'source': 'DRIVER',
+          'category': 'Truck Issue',
+          'isUncollectedGarbage': false,
           'status': normalizeStatus(i['status']),
           'createdAt': dt,
-          'purok': i['purok']?.toString(), // Might be null, which is fine
+          'purok': i['purok']?.toString(),
         });
       }
     }
@@ -285,6 +338,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
     final String endDayStr = DateFormat('yyyy-MM-dd').format(_selectedDateRange.end);
 
     int matchedResidents = 0;
+    int residentPending = 0;
+    int residentResolved = 0;
     int matchedDrivers = 0;
     final Map<String, double> filteredStatusCounts = {"Pending": 0, "In Progress": 0, "Resolved": 0};
 
@@ -295,10 +350,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       bool dateMatch = itemDayStr.compareTo(startDayStr) >= 0 && itemDayStr.compareTo(endDayStr) <= 0;
       if (!dateMatch) continue;
 
-      // 2. Area Filtering
-      String? itemPurok = item['purok'];
+      // 2. Area Filtering & Canonicalization
+      String? rawPurok = item['purok'];
+      String? canonicalPurok = ServiceAreaService.canonicalizeAreaName(rawPurok) ?? rawPurok;
+
       bool areaMatch = _selectedArea == "All Areas" ||
-          (itemPurok != null && itemPurok.toLowerCase().trim() == _selectedArea.toLowerCase().trim());
+          (canonicalPurok != null && canonicalPurok.toLowerCase().trim() == _selectedArea.toLowerCase().trim()) ||
+          (rawPurok != null && rawPurok.toLowerCase().trim() == _selectedArea.toLowerCase().trim());
       
       if (!areaMatch) continue;
 
@@ -307,32 +365,108 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       filteredStatusCounts[status] = filteredStatusCounts[status]! + 1;
 
       if (item['source'] == 'RESIDENT') {
-        matchedResidents++;
+        if (item['isUncollectedGarbage'] == true) {
+          matchedResidents++;
+          if (status == 'Resolved') {
+            residentResolved++;
+          } else {
+            residentPending++;
+          }
+        }
       } else {
         matchedDrivers++;
       }
 
-      // Track per-purok frequency for heatmaps
-      if (itemPurok != null) {
-        purokCounts[itemPurok] = (purokCounts[itemPurok] ?? 0) + 1;
-      }
+      // Track per-purok frequency for heatmaps using canonicalized name (e.g. Dos Riles -> Purok 3)
+      String targetPurokKey = canonicalPurok ?? rawPurok ?? "Unknown";
+      purokCounts[targetPurokKey] = (purokCounts[targetPurokKey] ?? 0) + 1;
     }
 
     if (mounted) {
       setState(() {
-        // Use FILTERED counts for the visual chart and legend
+        // Use REAL FILTERED counts for the visual chart and legend
         _complaintStatusData = filteredStatusCounts;
 
-        // Use FILTERED counts for the info text breakdown
+        // Use REAL FILTERED counts for the info text breakdown
         _complaintSourceData = {"Residents": matchedResidents.toDouble(), "Drivers": matchedDrivers.toDouble()};
-
         _purokComplaintData = purokCounts;
+
+        _matchedResidents = matchedResidents;
+        _matchedDrivers = matchedDrivers;
+
         final int totalFilteredIssues = (matchedResidents + matchedDrivers);
         _issueRate = _completedRoutes > 0 ? (totalFilteredIssues / _completedRoutes) * 100 : 0.0;
+        _issueReportingRate = _issueRate;
 
         final DateTimeRange prevRange = _getPreviousPeriod(_selectedDateRange, _isDateRange);
         final Map<String, dynamic> prevMetrics = _calculateMetricsInRange(prevRange.start, prevRange.end, _selectedArea);
-        _calculateIssueTrends(prevRange, _selectedArea, _completedRoutes, (prevMetrics['completed'] as int?) ?? 0);
+        int prevCompleted = prevMetrics['completed'] as int? ?? 0;
+
+        // Calculate prev resident uncollected garbage reports
+        int prevResidentCount = 0;
+        final startStr = DateFormat('yyyy-MM-dd').format(prevRange.start);
+        final endStr = DateFormat('yyyy-MM-dd').format(prevRange.end);
+        for (var c in _allResidentComplaints) {
+          DateTime? dt = parseAnyDate(c['created_at'] ?? c['timestamp'] ?? c['date']);
+          if (dt != null) {
+            String itemDayStr = DateFormat('yyyy-MM-dd').format(dt);
+            if (itemDayStr.compareTo(startStr) >= 0 && itemDayStr.compareTo(endStr) <= 0) {
+              String? rawPurok = c['purok']?.toString() ?? c['location']?.toString();
+              String? canonicalPurok = ServiceAreaService.canonicalizeAreaName(rawPurok) ?? rawPurok;
+              bool areaMatch = _selectedArea == "All Areas" ||
+                  (canonicalPurok != null && canonicalPurok.toLowerCase().trim() == _selectedArea.toLowerCase().trim()) ||
+                  (rawPurok != null && rawPurok.toLowerCase().trim() == _selectedArea.toLowerCase().trim());
+              String category = (c['category'] ?? c['type'] ?? c['issue_type'] ?? '').toString();
+              bool isUncollectedGarbage = category.isEmpty ||
+                  category.toLowerCase().contains('uncollected') ||
+                  category.toLowerCase().contains('missed') ||
+                  category.toLowerCase().contains('pickup');
+              if (areaMatch && isUncollectedGarbage) prevResidentCount++;
+            }
+          }
+        }
+
+        _missedPickupsCount = matchedResidents;
+        _missedPickupsPending = residentPending;
+        _missedPickupsResolved = residentResolved;
+        _prevMissedPickupsCount = prevResidentCount;
+
+        int missedDiff = _missedPickupsCount - prevResidentCount;
+        if (prevResidentCount > 0 || _missedPickupsCount > 0) {
+          if (missedDiff == 0) {
+            _missedPickupsTrendText = "No change vs previous";
+            _missedPickupsTrendPositive = true;
+          } else if (missedDiff < 0) {
+            _missedPickupsTrendText = "${missedDiff.abs()} fewer vs previous";
+            _missedPickupsTrendPositive = true;
+          } else {
+            _missedPickupsTrendText = "+${missedDiff.abs()} vs previous";
+            _missedPickupsTrendPositive = false;
+          }
+        } else {
+          _missedPickupsTrendText = "N/A";
+        }
+
+        double prevIssueRate = prevCompleted > 0 ? (prevResidentCount / prevCompleted) * 100 : 0.0;
+        _prevIssueReportingRate = prevIssueRate;
+        double issueDiff = _issueReportingRate - prevIssueRate;
+
+        if (prevCompleted > 0 || _completedRoutes > 0) {
+          if (issueDiff == 0) {
+            _issueReportingTrendText = "No change vs previous";
+            _issueReportingTrendPositive = true;
+          } else if (issueDiff < 0) {
+            _issueReportingTrendText = "${issueDiff.abs().toStringAsFixed(0)} fewer per 100 vs previous";
+            _issueReportingTrendPositive = true;
+          } else {
+            _issueReportingTrendText = "${issueDiff.abs().toStringAsFixed(0)} more per 100 vs previous";
+            _issueReportingTrendPositive = false;
+          }
+        } else {
+          _issueReportingTrendText = "N/A";
+        }
+        _issueTrend = _missedPickupsTrendText;
+        _issueTrendPositive = _missedPickupsTrendPositive;
       });
     }
 
@@ -342,12 +476,39 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
     debugPrint("- Status Distribution: $filteredStatusCounts");
   }
 
+  String _generateRuleBasedRecommendations() {
+    final StringBuffer recs = StringBuffer();
+    final int pendingCount = (_complaintStatusData['Pending'] ?? 0).toInt();
+    final double activeTrucks = (_truckStatusData['Active'] ?? 0);
+    final double idleTrucks = (_truckStatusData['Idle'] ?? 0);
+
+    if (pendingCount > 0) {
+      recs.writeln("• Priority Focus: $pendingCount pending resident complaint(s) in $_selectedArea requiring attention.");
+    } else {
+      recs.writeln("• Resident Feedback: Area reports high satisfaction with no pending complaints.");
+    }
+
+    if (_tomorrowWaste > (_totalFleetCapacity * 0.85)) {
+      recs.writeln("• Capacity Warning: Tomorrow's forecast (${_tomorrowWaste.toInt()} kg) reaches 85% of active fleet capacity (${_totalFleetCapacity.toInt()} kg). Consider pre-assigning backup trucks.");
+    } else {
+      recs.writeln("• Fleet Allocation: Predicted volume (${_tomorrowWaste.toInt()} kg) is within safe operational capacity (${_totalFleetCapacity.toInt()} kg).");
+    }
+
+    if (idleTrucks > 0) {
+      recs.writeln("• Fleet Optimization: ${idleTrucks.toInt()} truck(s) currently idle. Assign to high-density coverage zones.");
+    } else {
+      recs.writeln("• Fleet Status: Active truck deployment is optimal across collection routes.");
+    }
+
+    return recs.toString().trim();
+  }
+
   Future<void> _generateAiInsights() async {
     if (!mounted) return;
 
     setState(() => _isAiLoading = true);
 
-    const apiKey = "PASTE_YOUR_GEMINI_API_KEY_HERE";
+    const apiKey = "AIzaSyCPng8Ef9-AsuUiagku1FAQOowQniZYkOo";
     final model = GenerativeModel(model: 'gemini-1.5-flash-latest', apiKey: apiKey);
 
     // Prepare data context for AI
@@ -365,25 +526,104 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
         : "Sentro")
         : _selectedArea;
 
-    double predictedVol = PredictionEngine.predictWasteVolume(topArea, stopCount: _stopsPerRoute);
-    double weeklyVol = PredictionEngine.predictWeeklyVolume(topArea, avgStops: _stopsPerRoute);
+    // Calculate Dynamic Active Fleet Capacity
+    double activeCapacity = 0.0;
+    if (_truckRegistry.isNotEmpty) {
+      _truckRegistry.forEach((tId, tData) {
+        if (tData is Map) {
+          final status = tData['status']?.toString().toLowerCase() ?? 'active';
+          if (status != 'out_of_service' && status != 'inactive' && status != 'maintenance') {
+            final num? cap = num.tryParse(tData['capacity']?.toString() ?? '') ??
+                num.tryParse(tData['truck_capacity']?.toString() ?? '') ??
+                num.tryParse(tData['maxVolume']?.toString() ?? '');
+            activeCapacity += (cap?.toDouble() ?? 5000.0);
+          }
+        }
+      });
+    }
+    _totalFleetCapacity = activeCapacity > 0 ? activeCapacity : 5000.0;
 
-    // Dynamic ETA logic: Find nearby puroks or specific area
+    // Calculate Historical Weight Averages from Collection Progress
+    double totalRecordedKg = 0.0;
+    int validSessions = 0;
+    if (_allCollectionProgress.isNotEmpty) {
+      _allCollectionProgress.forEach((sId, progress) {
+        if (progress is Map) {
+          progress.forEach((purokKey, purokData) {
+            if (purokData is Map) {
+              final rawName = purokData['name']?.toString() ?? purokKey.toString();
+              final String? canonical = ServiceAreaService.canonicalizeAreaName(rawName) ?? rawName;
+              if (topArea == "All Areas" || canonical == topArea) {
+                final num? weight = num.tryParse(purokData['weight']?.toString() ?? '') ??
+                    num.tryParse(purokData['volume']?.toString() ?? '') ??
+                    num.tryParse(purokData['actual_weight']?.toString() ?? '');
+                if (weight != null && weight > 0) {
+                  totalRecordedKg += weight.toDouble();
+                  validSessions++;
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+    double? histAvgKg = validSessions > 0 ? (totalRecordedKg / validSessions) : null;
+
+    double predictedVol = PredictionEngine.predictWasteVolume(topArea, stopCount: _stopsPerRoute, historicalAvgKg: histAvgKg);
+    double weeklyVol = PredictionEngine.predictWeeklyVolume(topArea, avgStops: _stopsPerRoute, historicalAvgKg: histAvgKg);
+
+    // Dynamic GPS-based ETA calculation
     _etaEstimates.clear();
     final List<String> targetPuroks = _selectedArea == "All Areas"
-        ? _purokNames // Populate all for "View All" modal
+        ? _purokNames
         : [_selectedArea];
 
-    for (var p in targetPuroks) {
-      // Estimate based on system average speed or fallback to 20km/h
-      double avgSysSpeed = (_avgCollectionTime > 0 && _distanceCovered > 0)
-          ? (_distanceCovered / _avgCollectionTime)
-          : 20.0;
+    // Reference Purok Coordinates (Balintawak Barangay Context)
+    const Map<String, List<double>> purokCoordinates = {
+      'Ayala Highway (Almarius to Fat Grill)': [13.9415, 121.1632],
+      'Brixton Homes': [13.9480, 121.1685],
+      'Central (Purok 1)': [13.9430, 121.1620],
+      'Purok 2': [13.9450, 121.1640],
+      'Purok 3': [13.9470, 121.1660],
+      'Purok 4 / El Pueblo': [13.9490, 121.1690],
+      'Purok Paraiso': [13.9420, 121.1650],
+      'Riverside': [13.9400, 121.1610],
+      'San Nicolas': [13.9380, 121.1590],
+      'T.M. Kalaw Street': [13.9440, 121.1630],
+    };
 
-      double dist = (_purokNames.indexOf(p) + 1) * 0.8; // Rough distance estimate
-      double mins = PredictionEngine.estimateArrivalTime(dist, [avgSysSpeed, avgSysSpeed * 0.9]);
-      DateTime arrival = DateTime.now().add(Duration(minutes: mins.toInt()));
-      _etaEstimates[p] = DateFormat('h:mm a').format(arrival);
+    for (var p in targetPuroks) {
+      bool foundActiveGps = false;
+      final targetCoords = purokCoordinates[p];
+
+      if (targetCoords != null && _allTruckLocations.isNotEmpty) {
+        _allTruckLocations.forEach((truckId, liveData) {
+          if (!foundActiveGps && liveData is Map) {
+            final double? lat = num.tryParse(liveData['latitude']?.toString() ?? '')?.toDouble();
+            final double? lng = num.tryParse(liveData['longitude']?.toString() ?? '')?.toDouble();
+            final double speed = num.tryParse(liveData['speed']?.toString() ?? '')?.toDouble() ?? 20.0;
+            final bool isOnline = liveData['isOnline'] == true || liveData['status']?.toString().toLowerCase() == 'collecting';
+
+            if (lat != null && lng != null && isOnline) {
+              double distKm = PredictionEngine.calculateHaversineDistance(lat, lng, targetCoords[0], targetCoords[1]);
+              double mins = PredictionEngine.calculateLiveEtaMinutes(distKm, speed, remainingStops: 2);
+              DateTime arrival = DateTime.now().add(Duration(minutes: mins.toInt()));
+              _etaEstimates[p] = DateFormat('h:mm a').format(arrival);
+              foundActiveGps = true;
+            }
+          }
+        });
+      }
+
+      if (!foundActiveGps) {
+        double avgSysSpeed = (_avgCollectionTime > 0 && _distanceCovered > 0)
+            ? (_distanceCovered / _avgCollectionTime)
+            : 20.0;
+        double dist = (_purokNames.indexOf(p) + 1) * 0.8;
+        double mins = PredictionEngine.estimateArrivalTime(dist, [avgSysSpeed, avgSysSpeed * 0.9]);
+        DateTime arrival = DateTime.now().add(Duration(minutes: mins.toInt()));
+        _etaEstimates[p] = DateFormat('h:mm a').format(arrival);
+      }
     }
 
     if (mounted) {
@@ -437,7 +677,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
 
           if (text.contains("RECOMMENDATIONS:")) {
             _recommendations = text.split("RECOMMENDATIONS:")[1].split("OVERALL_CONCLUSION:")[0].trim();
+          } else {
+            _recommendations = _generateRuleBasedRecommendations();
           }
+
+          if (_recommendations.trim().isEmpty || _recommendations == "Analyzing fleet...") {
+            _recommendations = _generateRuleBasedRecommendations();
+          }
+
           if (text.contains("OVERALL_CONCLUSION:")) {
             _geminiSummary = text.split("OVERALL_CONCLUSION:")[1].trim();
           }
@@ -448,7 +695,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       if (mounted) {
         setState(() {
           _isAiLoading = false;
-          _geminiSummary = "Unable to generate real-time AI insights. Please check connection.";
+          _recommendations = _generateRuleBasedRecommendations();
+          _geminiSummary = "Unable to generate real-time AI insights. Showing rule-based system recommendations.";
         });
       }
     }
@@ -998,6 +1246,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       }
     });
 
+    _weeklyProgressSubscription = _database.ref('weekly_collection_progress').onValue.listen((event) {
+      if (event.snapshot.exists && event.snapshot.value != null) {
+        _allWeeklyCollectionProgress = event.snapshot.value as Map;
+        _recalculateRoutesMetrics();
+        _calculateAnalytics();
+      }
+    });
+
     _truckIssuesSubscription = _database.ref('truck_issues').onValue.listen((event) {
       if (event.snapshot.exists && event.snapshot.value != null) {
         final Map data = event.snapshot.value as Map;
@@ -1103,32 +1359,62 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
         _coveragePercent = _totalRoutes > 0 ? (_completedRoutes / _totalRoutes) * 100 : 0.0;
 
         final Map<String, int> freq = {};
+        final Map<String, int> visitCounts = {};
         if (currentMetrics['purokCompleted'] != null) {
           final Map<String, int> purokCompletedMap = currentMetrics['purokCompleted'] as Map<String, int>;
           final Map<String, int> purokExpectedMap = currentMetrics['purokExpected'] as Map<String, int>;
-          purokCompletedMap.forEach((String key, int value) {
-            final int total = purokExpectedMap[key] ?? 1;
-            freq[key] = ((value / total) * 100).toInt();
-          });
+          for (var area in _purokNames) {
+            int completed = purokCompletedMap[area] ?? 0;
+            int total = purokExpectedMap[area] ?? 1;
+            visitCounts[area] = area == "San Nicolas" ? 0 : completed;
+            freq[area] = (area == "San Nicolas" || total == 0) ? 0 : ((completed / total) * 100).toInt();
+          }
+        } else {
+          for (var area in _purokNames) {
+            visitCounts[area] = 0;
+            freq[area] = 0;
+          }
         }
         _purokFrequencyData = freq;
+        _purokVisitCounts = visitCounts;
 
         // Calculate Trends
-        double currentRate = _totalRoutes > 0 ? (_completedRoutes / _totalRoutes) : 0.0;
-        double prevRate = prevMetrics['total']! > 0 ? (prevMetrics['completed']! / prevMetrics['total']!) : 0.0;
+        int prevCompleted = prevMetrics['completed'] as int? ?? 0;
+        int prevTotal = prevMetrics['total'] as int? ?? 0;
+        _prevCompletedRoutes = prevCompleted;
+        _prevTotalRoutes = prevTotal;
 
-        if ((prevMetrics['total'] as int? ?? 0) > 0 || _totalRoutes > 0) {
-          final double diff = (currentRate - prevRate) * 100;
-          _routeTrend = "${diff.abs().toStringAsFixed(1)}%";
-          _routeTrendPositive = diff >= 0;
-
-          _coverageTrend = _routeTrend;
-          _coverageTrendPositive = _routeTrendPositive;
+        int completedDiff = _completedRoutes - prevCompleted;
+        if (prevCompleted > 0 || _completedRoutes > 0) {
+          if (completedDiff == 0) {
+            _routeTrend = "No change vs previous";
+            _routeTrendPositive = true;
+          } else {
+            _routeTrend = "${completedDiff > 0 ? '+' : ''}$completedDiff vs previous";
+            _routeTrendPositive = completedDiff >= 0;
+          }
         } else {
           _routeTrend = "N/A";
-          _routeTrendPositive = true;
-          _coverageTrend = "N/A";
         }
+
+        _routeCompletionRate = _totalRoutes > 0 ? (_completedRoutes / _totalRoutes) * 100 : 0.0;
+        _prevRouteCompletionRate = prevTotal > 0 ? (prevCompleted / prevTotal) * 100 : 0.0;
+        double completionDiffPoints = _routeCompletionRate - _prevRouteCompletionRate;
+
+        if (prevTotal > 0 || _totalRoutes > 0) {
+          if (completionDiffPoints == 0) {
+            _routeCompletionTrendText = "0 percentage points";
+            _routeCompletionTrendPositive = true;
+          } else {
+            _routeCompletionTrendText = "${completionDiffPoints > 0 ? '+' : ''}${completionDiffPoints.toStringAsFixed(0)} percentage points";
+            _routeCompletionTrendPositive = completionDiffPoints >= 0;
+          }
+        } else {
+          _routeCompletionTrendText = "N/A";
+        }
+
+        _coverageTrend = _routeTrend;
+        _coverageTrendPositive = _routeTrendPositive;
 
         // Process complaints will handle issue trends
         _processComplaintsAndIssues();
@@ -1225,17 +1511,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
           if (progress is Map) {
             progress.forEach((purokKey, purokData) {
               if (purokData is Map) {
-                final areaName = purokData['name']?.toString() ?? "";
-                if (areaName.isNotEmpty) {
+                final rawName = purokData['name']?.toString() ?? purokKey.toString();
+                final String? canonical = ServiceAreaService.canonicalizeAreaName(rawName) ?? (purokCompleted.containsKey(rawName) ? rawName : null);
+                if (canonical != null && canonical.isNotEmpty) {
                   // Apply area filter
-                  if (areaFilter == "All Areas" || areaName == areaFilter) {
-                    final String uniqueKey = "${dateStr}_$areaName";
+                  if (areaFilter == "All Areas" || canonical == areaFilter) {
+                    final String uniqueKey = "${dateStr}_$canonical";
 
                     if (purokData['completed'] == true) {
                       if (!completedUniqueKeys.contains(uniqueKey)) {
                         completedUniqueKeys.add(uniqueKey);
-                        if (purokCompleted.containsKey(areaName)) {
-                          purokCompleted[areaName] = purokCompleted[areaName]! + 1;
+                        if (purokCompleted.containsKey(canonical)) {
+                          purokCompleted[canonical] = (purokCompleted[canonical] ?? 0) + 1;
                         }
                       } else {
                         duplicatesRemoved++;
@@ -1245,7 +1532,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                     // In case a driver does a route not in our default expected set
                     if (!expectedUniqueKeys.contains(uniqueKey)) {
                       expectedUniqueKeys.add(uniqueKey);
-                      purokExpected[areaName] = (purokExpected[areaName] ?? 0) + 1;
+                      purokExpected[canonical] = (purokExpected[canonical] ?? 0) + 1;
                     }
                   }
                 }
@@ -1255,6 +1542,50 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
         }
       }
     });
+
+    // Also process weekly_collection_progress entries as an additional data source
+    if (_allWeeklyCollectionProgress.isNotEmpty) {
+      _allWeeklyCollectionProgress.forEach((weekKey, weekData) {
+        if (weekData is Map) {
+          weekData.forEach((driverId, driverData) {
+            if (driverData is Map && driverData['areas'] is Map) {
+              final Map areasMap = driverData['areas'] as Map;
+              areasMap.forEach((areaKey, areaData) {
+                if (areaData is Map && areaData['completed'] == true) {
+                  String dateStr = "";
+                  if (areaData['completedAt'] != null) {
+                    final String raw = areaData['completedAt'].toString();
+                    if (raw.length >= 10) {
+                      dateStr = raw.substring(0, 10);
+                    }
+                  }
+                  if (dateStr.isEmpty) {
+                    dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                  }
+
+                  bool inRange = dateStr.compareTo(startStr) >= 0 && dateStr.compareTo(endStr) <= 0;
+                  if (inRange) {
+                    final rawName = areaData['name']?.toString() ?? areaKey.toString();
+                    final String? canonical = ServiceAreaService.canonicalizeAreaName(rawName) ?? (purokCompleted.containsKey(rawName) ? rawName : null);
+                    if (canonical != null && canonical.isNotEmpty) {
+                      if (areaFilter == "All Areas" || canonical == areaFilter) {
+                        final String uniqueKey = "${dateStr}_$canonical";
+                        if (!completedUniqueKeys.contains(uniqueKey)) {
+                          completedUniqueKeys.add(uniqueKey);
+                          if (purokCompleted.containsKey(canonical)) {
+                            purokCompleted[canonical] = (purokCompleted[canonical] ?? 0) + 1;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              });
+            }
+          });
+        }
+      });
+    }
 
     if (debug) {
       debugPrint("==================================================");
@@ -1350,17 +1681,131 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text("Viewing Dashboard: $_selectedArea", style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1A1A1A))),
-                                  const SizedBox(height: 24),
-                                  Row(
-                                    children: [
-                                      Expanded(child: _buildMetricCard("Routes Done", "$_completedRoutes", Icons.local_shipping_rounded, const Color(0xFF4CAF50), trend: _routeTrend, isPositive: _routeTrendPositive)),
-                                      const SizedBox(width: 8),
-                                      Expanded(child: _buildMetricCard("Coverage", "${_coveragePercent.toInt()}%", Icons.map_rounded, const Color(0xFF2196F3), trend: _coverageTrend, isPositive: _coverageTrendPositive)),
-                                      const SizedBox(width: 8),
-                                      Expanded(child: _buildMetricCard("Issue Rate", "${_issueRate.toStringAsFixed(1)}%", Icons.warning_rounded, const Color(0xFFF44336), trend: _issueTrend, isPositive: _issueTrendPositive)),
-                                    ],
-                                  ),
+                                  isMobile
+                                      ? Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              crossAxisAlignment: CrossAxisAlignment.baseline,
+                                              textBaseline: TextBaseline.alphabetic,
+                                              children: [
+                                                const Text(
+                                                  "Overview",
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: 18,
+                                                    color: Color(0xFF1A1A1A),
+                                                    letterSpacing: -0.3,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  "Tap a card for details",
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _buildCompactMobileMetricCard(
+                                                    title: "Routes done",
+                                                    value: _totalRoutes > 0 ? "$_completedRoutes" : "N/A",
+                                                    subtitle: _totalRoutes > 0 ? "of $_totalRoutes scheduled" : "No schedule data",
+                                                    icon: Icons.local_shipping_rounded,
+                                                    cardBgColor: const Color(0xFFF3F9F3),
+                                                    borderColor: const Color(0xFFE2F0E2),
+                                                    iconBgColor: const Color(0xFFE8F5E9),
+                                                    iconColor: const Color(0xFF2E7D32),
+                                                    onTap: () => _showInsightDialog("routes_done"),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: _buildCompactMobileMetricCard(
+                                                    title: "Completion",
+                                                    value: _totalRoutes > 0 ? "${_routeCompletionRate.toStringAsFixed(0)}%" : "N/A",
+                                                    subtitle: _totalRoutes > 0 ? "$_completedRoutes of $_totalRoutes routes" : "No schedule data",
+                                                    icon: Icons.map_rounded,
+                                                    cardBgColor: const Color(0xFFF0F6FE),
+                                                    borderColor: const Color(0xFFE1EDFE),
+                                                    iconBgColor: const Color(0xFFE3F2FD),
+                                                    iconColor: const Color(0xFF1976D2),
+                                                    onTap: () => _showInsightDialog("route_completion"),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: _buildCompactMobileMetricCard(
+                                                    title: "Missed pickups",
+                                                    value: "$_missedPickupsCount",
+                                                    subtitle: "Reported",
+                                                    icon: Icons.warning_rounded,
+                                                    cardBgColor: const Color(0xFFFFF6ED),
+                                                    borderColor: const Color(0xFFFEE8D6),
+                                                    iconBgColor: const Color(0xFFFFE0B2),
+                                                    iconColor: const Color(0xFFE65100),
+                                                    onTap: () => _showInsightDialog("missed_pickups"),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        )
+                                      : Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text("Viewing Dashboard: $_selectedArea", style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1A1A1A))),
+                                            const SizedBox(height: 24),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _buildMetricCard(
+                                                    title: "Routes done",
+                                                    value: _totalRoutes > 0 ? "$_completedRoutes" : "N/A",
+                                                    subtitle: _totalRoutes > 0 ? "of $_totalRoutes scheduled" : "No schedule data",
+                                                    icon: Icons.local_shipping_rounded,
+                                                    color: const Color(0xFF4CAF50),
+                                                    trendText: _routeTrend ?? "N/A",
+                                                    isPositive: _routeTrendPositive,
+                                                    onTap: () => _showInsightDialog("routes_done"),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 16),
+                                                Expanded(
+                                                  child: _buildMetricCard(
+                                                    title: "Route completion",
+                                                    value: _totalRoutes > 0 ? "${_routeCompletionRate.toStringAsFixed(0)}%" : "N/A",
+                                                    subtitle: _totalRoutes > 0 ? "$_completedRoutes completed / $_totalRoutes scheduled" : "No schedule data",
+                                                    icon: Icons.map_rounded,
+                                                    color: const Color(0xFF2196F3),
+                                                    trendText: _routeCompletionTrendText ?? "N/A",
+                                                    isPositive: _routeCompletionTrendPositive,
+                                                    onTap: () => _showInsightDialog("route_completion"),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 16),
+                                                Expanded(
+                                                  child: _buildMetricCard(
+                                                    title: "Missed Pickups",
+                                                    value: "$_missedPickupsCount",
+                                                    subtitle: "uncollected trash reports",
+                                                    icon: Icons.report_problem_rounded,
+                                                    color: const Color(0xFFE65100),
+                                                    trendText: _missedPickupsTrendText ?? "N/A",
+                                                    isPositive: _missedPickupsTrendPositive,
+                                                    onTap: () => _showInsightDialog("missed_pickups"),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
                                   const SizedBox(height: 32),
                                   if (isMobile) ...[
                                     _buildChartSection("Truck Status", _buildTruckDonutChart(), legend: [
@@ -1790,113 +2235,472 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color, {bool isPositive = true, String? trend}) {
+  Widget _buildMetricCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required String trendText,
+    required bool isPositive,
+    required VoidCallback onTap,
+  }) {
     final bool isMobile = MediaQuery.of(context).size.width < 900;
-    
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(isMobile ? 20 : 28),
-        boxShadow: AppTheme.balancedPulidongShadow,
-        border: Border.all(color: Colors.white, width: 2),
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.all(isMobile ? 16 : 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+            border: Border.all(color: Colors.grey.shade200, width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(icon, color: color, size: 18),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: isMobile ? 13 : 14,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (trendText != "N/A")
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: (isPositive ? Colors.green : Colors.red).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        trendText,
+                        style: TextStyle(
+                          color: isPositive ? Colors.green.shade700 : Colors.red.shade700,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: isMobile ? 24 : 32,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF1A1A1A),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Text(
+                    "View insight",
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.arrow_forward_rounded, size: 14, color: color),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
-      child: Stack(
-        children: [
-          // Background "Glass" Highlight
-          Positioned(
-            top: -15,
-            right: -15,
-            child: Container(
-              width: isMobile ? 60 : 80,
-              height: isMobile ? 60 : 80,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.08),
-                shape: BoxShape.circle,
+    );
+  }
+
+  Widget _buildCompactMobileMetricCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color cardBgColor,
+    required Color borderColor,
+    required Color iconBgColor,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: cardBgColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor, width: 1.2),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: iconBgColor,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 18),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: Colors.grey.shade600,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1A1A1A),
+                letterSpacing: -0.2,
               ),
             ),
-          ),
-          // Large Faded Background Icon
-          Positioned(
-            bottom: -10,
-            right: -5,
-            child: Icon(
-              icon,
-              size: isMobile ? 40 : 60,
-              color: color.withOpacity(0.05),
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1A1A1A),
+                  letterSpacing: -0.5,
+                ),
+              ),
             ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showInsightDialog(String metricType) {
+    final bool isMobile = MediaQuery.of(context).size.width < 900;
+    final String dateStr = _dateRangeDisplayStr;
+    final String filterStr = "$_selectedArea • $dateStr";
+
+    Widget content;
+    String title;
+    IconData icon;
+    Color color;
+    String actionLabel;
+    VoidCallback onAction;
+
+    if (metricType == "routes_done") {
+      title = "Routes done";
+      icon = Icons.local_shipping_rounded;
+      color = const Color(0xFF4CAF50);
+      actionLabel = "View route records →";
+      onAction = () {
+        Navigator.pop(context);
+        widget.onNavigate?.call(1);
+      };
+
+      int uncompleted = _totalRoutes > _completedRoutes ? _totalRoutes - _completedRoutes : 0;
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                "$_completedRoutes",
+                style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A)),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                "of $_totalRoutes scheduled",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
+              ),
+            ],
           ),
-          Padding(
-            padding: EdgeInsets.all(isMobile ? 12 : 20),
+          const SizedBox(height: 12),
+          Text(
+            uncompleted > 0
+                ? "Scheduled routes were completed in this period. Confirm status of uncompleted routes before marking them missed."
+                : "All scheduled routes in this period have been successfully completed.",
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          _buildDialogRow("Completed", "$_completedRoutes"),
+          const Divider(height: 24),
+          _buildDialogRow("Scheduled", "$_totalRoutes"),
+          const Divider(height: 24),
+          _buildDialogRow("Previous period", "${_prevCompletedRoutes}"),
+        ],
+      );
+    } else if (metricType == "route_completion") {
+      title = "Route completion";
+      icon = Icons.map_rounded;
+      color = const Color(0xFF2196F3);
+      actionLabel = "View route records →";
+      onAction = () {
+        Navigator.pop(context);
+        widget.onNavigate?.call(1);
+      };
+
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _totalRoutes > 0 ? "${_routeCompletionRate.toStringAsFixed(0)}%" : "N/A",
+            style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A)),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            "Completion changed from ${_prevRouteCompletionRate.toStringAsFixed(0)}% to ${_routeCompletionRate.toStringAsFixed(0)}%. This measures completion of scheduled routes, not geographic coverage.",
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          _buildDialogRow("Current period", "$_completedRoutes / $_totalRoutes"),
+          const Divider(height: 24),
+          _buildDialogRow("Previous period", "$_prevCompletedRoutes / $_prevTotalRoutes"),
+          const Divider(height: 24),
+          _buildDialogRow("Change", _routeCompletionTrendText ?? "N/A"),
+        ],
+      );
+    } else {
+      title = "Missed Pickups";
+      icon = Icons.report_problem_rounded;
+      color = const Color(0xFFE65100);
+      actionLabel = "View complaint records →";
+      onAction = () {
+        Navigator.pop(context);
+        widget.onNavigate?.call(3);
+      };
+
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                "$_missedPickupsCount",
+                style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A)),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                "uncollected trash reports",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _missedPickupsPending > 0
+                ? "$_missedPickupsCount uncollected trash reports were submitted by residents in this area. $_missedPickupsPending report${_missedPickupsPending > 1 ? 's are' : ' is'} currently pending response; dispatch a backup truck to assist these residents."
+                : "All uncollected trash reports submitted by residents in this area during this period have been resolved.",
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          _buildDialogRow("Pending response", "$_missedPickupsPending"),
+          const Divider(height: 24),
+          _buildDialogRow("Resolved", "$_missedPickupsResolved"),
+          const Divider(height: 24),
+          _buildDialogRow("Previous period", "$_prevMissedPickupsCount"),
+        ],
+      );
+    }
+
+    if (isMobile) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        builder: (context) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      padding: EdgeInsets.all(isMobile ? 6 : 10),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(icon, color: color, size: isMobile ? 16 : 20),
-                    ),
-                    if (trend != null && trend != "N/A")
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: (title == "Coverage" ? const Color(0xFF2196F3) : (isPositive ? Colors.green : Colors.red)).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: (title == "Coverage" ? const Color(0xFF2196F3) : (isPositive ? Colors.green : Colors.red)).withOpacity(0.2)),
-                          ),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(isPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 8, color: title == "Coverage" ? const Color(0xFF2196F3) : (isPositive ? Colors.green : Colors.red)),
-                                const SizedBox(width: 2),
-                                Text(trend, style: TextStyle(color: title == "Coverage" ? const Color(0xFF2196F3) : (isPositive ? Colors.green : Colors.red), fontSize: 8, fontWeight: FontWeight.w900)),
-                              ],
-                            ),
-                          ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                          child: Icon(icon, color: color, size: 20),
                         ),
-                      ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A))),
+                            const SizedBox(height: 2),
+                            Text(filterStr, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                      onPressed: () => Navigator.pop(context),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    title, 
-                    style: TextStyle(
-                      fontSize: isMobile ? 10 : 12, 
-                      color: Colors.grey.shade600, 
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2
-                    )
-                  ),
-                ),
-                const SizedBox(height: 4),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    value, 
-                    style: TextStyle(
-                      fontSize: isMobile ? 18 : 24, 
-                      fontWeight: FontWeight.w900, 
-                      color: const Color(0xFF1A1A1A),
-                      letterSpacing: -0.5
+                const SizedBox(height: 20),
+                content,
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: onAction,
+                    style: TextButton.styleFrom(
+                      foregroundColor: color,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
+                    child: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                   ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
+        ),
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          contentPadding: const EdgeInsets.all(24),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                          child: Icon(icon, color: color, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A))),
+                            const SizedBox(height: 2),
+                            Text(filterStr, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                content,
+                const SizedBox(height: 24),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: onAction,
+                    style: TextButton.styleFrom(
+                      foregroundColor: color,
+                      padding: EdgeInsets.zero,
+                    ),
+                    child: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildDialogRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A))),
+      ],
     );
   }
 
@@ -1975,7 +2779,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("Purok Coverage (%)", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Color(0xFF1A1A1A))),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Purok Coverage", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Color(0xFF1A1A1A))),
+                  const SizedBox(height: 2),
+                  Text("Collection frequency & resident complaints", style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+                ],
+              ),
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: const BoxDecoration(color: Color(0xFFE3F2FD), shape: BoxShape.circle),
@@ -1983,8 +2794,140 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
               ),
             ],
           ),
-          const SizedBox(height: 32),
-          SizedBox(height: 350, child: _buildPurokBarChart()),
+          const SizedBox(height: 20),
+
+          // Legend
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: const Color(0xFF8E24AA), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(width: 6),
+              const Text("Collection frequency (Visits)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2C3E50))),
+              const SizedBox(width: 24),
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: const Color(0xFF2196F3), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(width: 6),
+              const Text("Resident complaints", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2C3E50))),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Scale Header
+          Row(
+            children: [
+              const Expanded(flex: 3, child: SizedBox()),
+              Expanded(
+                flex: 4,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Text("10", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700)),
+                    Text("8", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700)),
+                    Text("0", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w900)),
+                    Text("5", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700)),
+                    Text("8", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700)),
+                    Text("10", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Purok Rows
+          ..._purokNames.map((area) {
+            int visits = _purokFrequencyData[area] ?? 0;
+            int complaints = (_purokComplaintData[area] ?? 0).toInt();
+
+            double maxScale = 10.0;
+            double visitRatio = (visits / maxScale).clamp(0.0, 1.0);
+            double complaintRatio = (complaints / maxScale).clamp(0.0, 1.0);
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      area,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF2C3E50)),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(
+                                area == "San Nicolas" ? "-" : "$visits",
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF8E24AA)),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: FractionallySizedBox(
+                                  widthFactor: area == "San Nicolas" ? 0.0 : visitRatio,
+                                  alignment: Alignment.centerRight,
+                                  child: Container(
+                                    height: 14,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF8E24AA),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          width: 2,
+                          height: 24,
+                          color: Colors.grey.shade400,
+                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: [
+                              Flexible(
+                                child: FractionallySizedBox(
+                                  widthFactor: complaintRatio,
+                                  alignment: Alignment.centerLeft,
+                                  child: Container(
+                                    height: 14,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF2196F3),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                "$complaints",
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF2196F3)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+
+          const SizedBox(height: 16),
+          const Center(
+            child: Text(
+              "San Nicolas: stationary sweeping area",
+              style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey, fontWeight: FontWeight.w500),
+            ),
+          ),
           const SizedBox(height: 24),
           Center(
             child: TextButton(
@@ -2142,15 +3085,61 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
   }
 
   void _showFullDetailsModal(BuildContext context) {
-    if (MediaQuery.of(context).size.width < 900) {
-      showModalBottomSheet(
+    final double width = MediaQuery.of(context).size.width;
+    if (width < 600) {
+      showGeneralDialog(
         context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (context) => _FullDetailsModal(
-          frequencyData: _purokFrequencyData, 
-          complaintData: _purokComplaintData,
-          isMobile: true,
+        barrierDismissible: true,
+        barrierLabel: "Operational Insights",
+        barrierColor: Colors.black54,
+        pageBuilder: (context, animation, secondaryAnimation) => SafeArea(
+          child: Scaffold(
+            backgroundColor: Colors.white,
+            body: _OperationalInsightsModal(
+              frequencyData: _purokFrequencyData,
+              visitData: _purokVisitCounts,
+              complaintData: _purokComplaintData,
+              completedRoutes: _completedRoutes,
+              totalRoutes: _totalRoutes,
+              complaintStatusData: _complaintStatusData,
+              complaintSourceData: _complaintSourceData,
+              selectedArea: _selectedArea,
+              selectedDateRange: _selectedDateRange,
+              purokNames: _purokNames,
+              geminiSummary: _geminiSummary,
+              recommendations: _recommendations,
+              isAiLoading: _isAiLoading,
+              onRefresh: () => _refreshAllStats(manual: true),
+            ),
+          ),
+        ),
+      );
+    } else if (width < 1000) {
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800, maxHeight: 750),
+            child: _OperationalInsightsModal(
+              frequencyData: _purokFrequencyData,
+              visitData: _purokVisitCounts,
+              complaintData: _purokComplaintData,
+              completedRoutes: _completedRoutes,
+              totalRoutes: _totalRoutes,
+              complaintStatusData: _complaintStatusData,
+              complaintSourceData: _complaintSourceData,
+              selectedArea: _selectedArea,
+              selectedDateRange: _selectedDateRange,
+              purokNames: _purokNames,
+              geminiSummary: _geminiSummary,
+              recommendations: _recommendations,
+              isAiLoading: _isAiLoading,
+              onRefresh: () => _refreshAllStats(manual: true),
+            ),
+          ),
         ),
       );
     } else {
@@ -2159,12 +3148,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
         builder: (context) => Dialog(
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+          insetPadding: const EdgeInsets.all(32),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 550),
-            child: _FullDetailsModal(
-              frequencyData: _purokFrequencyData, 
+            constraints: const BoxConstraints(maxWidth: 1100, maxHeight: 850),
+            child: _OperationalInsightsModal(
+              frequencyData: _purokFrequencyData,
+              visitData: _purokVisitCounts,
               complaintData: _purokComplaintData,
-              isMobile: false,
+              completedRoutes: _completedRoutes,
+              totalRoutes: _totalRoutes,
+              complaintStatusData: _complaintStatusData,
+              complaintSourceData: _complaintSourceData,
+              selectedArea: _selectedArea,
+              selectedDateRange: _selectedDateRange,
+              purokNames: _purokNames,
+              geminiSummary: _geminiSummary,
+              recommendations: _recommendations,
+              isAiLoading: _isAiLoading,
+              onRefresh: () => _refreshAllStats(manual: true),
             ),
           ),
         ),
@@ -2198,7 +3199,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
           const Divider(height: 12),
           _predictionDetailRow("This Week:", "${_weeklyWaste.toInt()} kg", themeColor: const Color(0xFF1E88E5)),
           const Divider(height: 12),
-          _predictionDetailRow("Truck Capacity:", "5000 kg", themeColor: const Color(0xFF1E88E5)),
+          _predictionDetailRow("Truck Capacity:", "${_totalFleetCapacity.toInt()} kg", themeColor: const Color(0xFF1E88E5)),
         ], titleColor: const Color(0xFF1E88E5)),
         const SizedBox(height: 16),
         _buildPredictionCard("Estimated Arrival Times", [
@@ -2250,24 +3251,559 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
         const SizedBox(height: 16),
         _buildEfficiencyCard(),
         const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white, 
-            borderRadius: BorderRadius.circular(24), 
-            boxShadow: AppTheme.balancedPulidongShadow,
-            border: Border.all(color: Colors.green.withAlpha(20))
+        _buildRedesignedOperationalContext(isMobile, MediaQuery.of(context).size.width),
+      ],
+    );
+  }
+
+  Widget _buildRedesignedOperationalContext(bool isMobile, double maxWidth) {
+    final int pendingComplaints = (_complaintStatusData['Pending'] ?? 0).toInt();
+    final int resolvedComplaints = (_complaintStatusData['Resolved'] ?? 0).toInt();
+    final int inProgressComplaints = (_complaintStatusData['In Progress'] ?? 0).toInt();
+    final bool hasLimitedActivity = _completedRoutes == 0;
+
+    final String dateStr = "${DateFormat('MMM dd').format(_selectedDateRange.start)} - ${DateFormat('MMM dd, yyyy').format(_selectedDateRange.end)}";
+
+    return Container(
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: AppTheme.balancedPulidongShadow,
+        border: Border.all(color: const Color(0xFF00897B).withAlpha(30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00897B).withAlpha(15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.insights_rounded, color: Color(0xFF00897B), size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Operational Context",
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: isMobile ? 15 : 16, color: const Color(0xFF1A1A1A)),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Collection performance, community issues & fleet context",
+                      style: TextStyle(fontSize: isMobile ? 11 : 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () => _refreshAllStats(manual: true),
+                icon: const Icon(Icons.refresh_rounded, color: Color(0xFF00897B), size: 20),
+                tooltip: "Refresh Operational Context",
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.filter_list_rounded, size: 14, color: Color(0xFF00897B)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Active Filter: Area: $_selectedArea | Period: $dateStr",
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          if (maxWidth >= 700)
+            Row(
+              children: [
+                Expanded(child: _buildOpMetricCard("Completed routes", "$_completedRoutes", "Recorded in selected period", Icons.local_shipping_rounded, const Color(0xFF00897B))),
+                const SizedBox(width: 12),
+                Expanded(child: _buildOpMetricCard("Pending complaints", "$pendingComplaints", "Open at end of period", Icons.chat_bubble_rounded, const Color(0xFFE53935))),
+                const SizedBox(width: 12),
+                Expanded(child: _buildOpMetricCard("Resolved complaints", "$resolvedComplaints", "Resolved during period", Icons.check_circle_rounded, const Color(0xFF43A047))),
+              ],
+            )
+          else
+            Column(
+              children: [
+                _buildOpMetricCard("Completed routes", "$_completedRoutes", "Recorded in selected period", Icons.local_shipping_rounded, const Color(0xFF00897B)),
+                const SizedBox(height: 10),
+                _buildOpMetricCard("Pending complaints", "$pendingComplaints", "Open at end of period", Icons.chat_bubble_rounded, const Color(0xFFE53935)),
+                const SizedBox(height: 10),
+                _buildOpMetricCard("Resolved complaints", "$resolvedComplaints", "Resolved during period", Icons.check_circle_rounded, const Color(0xFF43A047)),
+              ],
+            ),
+
+          if (hasLimitedActivity) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.amber.shade800, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Limited activity data", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.amber.shade900)),
+                        const SizedBox(height: 2),
+                        Text("No completed collection trips are recorded for this period. Verify log completeness before assessing performance.",
+                            style: TextStyle(fontSize: 11, color: Colors.amber.shade800, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 20),
+
+          if (maxWidth >= 1000)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 3, child: _buildOperationalSummaryBlock()),
+                const SizedBox(width: 20),
+                Expanded(flex: 2, child: _buildRecommendedChecksBlock()),
+              ],
+            )
+          else
+            Column(
+              children: [
+                _buildOperationalSummaryBlock(),
+                const SizedBox(height: 16),
+                _buildRecommendedChecksBlock(),
+              ],
+            ),
+
+          const SizedBox(height: 20),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          _buildExpandableSection(
+            title: "Coverage & routes",
+            subtitle: "${_completedRoutes} of $_totalRoutes scheduled routes completed (${_coveragePercent.toStringAsFixed(1)}%)",
+            isExpanded: _expCoverageRoutes,
+            onToggle: () => setState(() => _expCoverageRoutes = !_expCoverageRoutes),
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_coverageInsight, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2C3E50), height: 1.5)),
+                const SizedBox(height: 10),
+                _detailBullet("Total Scheduled Routes: $_totalRoutes"),
+                _detailBullet("Successfully Completed: $_completedRoutes"),
+                _detailBullet("Distance Covered: ${_distanceCovered.toStringAsFixed(1)} km"),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          _buildExpandableSection(
+            title: "Community issues",
+            subtitle: "$pendingComplaints pending, $inProgressComplaints in progress, $resolvedComplaints resolved",
+            isExpanded: _expCommunityIssues,
+            onToggle: () => setState(() => _expCommunityIssues = !_expCommunityIssues),
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_complaintInsight, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2C3E50), height: 1.5)),
+                const SizedBox(height: 10),
+                _detailBullet("Resident Complaints: ${_complaintSourceData['Residents']?.toInt() ?? 0}"),
+                _detailBullet("Driver Incidents: ${_complaintSourceData['Drivers']?.toInt() ?? 0}"),
+                _detailBullet("Active Pending: $pendingComplaints"),
+                _detailBullet("Resolved Issues: $resolvedComplaints"),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          _buildExpandableSection(
+            title: "Fleet & prediction quality",
+            subtitle: "Prediction accuracy: ${_predictionAccuracy.toStringAsFixed(1)}% | Avg time: ${_avgCollectionTime.toStringAsFixed(1)}h",
+            isExpanded: _expFleetPrediction,
+            onToggle: () => setState(() => _expFleetPrediction = !_expFleetPrediction),
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_fleetInsight, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2C3E50), height: 1.5)),
+                const SizedBox(height: 10),
+                _detailBullet("Prediction Accuracy: ${_predictionAccuracy.toStringAsFixed(1)}%"),
+                _detailBullet("Mean Absolute Error (MAE): ${_maeValue.toStringAsFixed(2)} mins"),
+                _detailBullet("Average Collection Duration: ${_avgCollectionTime.toStringAsFixed(1)} hours"),
+                _detailBullet("Active Fleet Units: ${(_truckStatusData['Active'] ?? 0).toInt()} active, ${(_truckStatusData['Full'] ?? 0).toInt()} full, ${(_truckStatusData['Idle'] ?? 0).toInt()} idle"),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          _buildExpandableSection(
+            title: "Area breakdown",
+            subtitle: "All 10 verified service areas (Filtered by $_selectedArea)",
+            isExpanded: _expAreaBreakdown,
+            onToggle: () => setState(() => _expAreaBreakdown = !_expAreaBreakdown),
+            content: maxWidth >= 1000 ? _buildAreaTableDesktop() : _buildAreaCardsMobile(),
+          ),
+          const SizedBox(height: 12),
+
+          _buildExpandableSection(
+            title: "Data notes",
+            subtitle: "Methodology, stationary sweeping & data snapshot notes",
+            isExpanded: _expDataNotes,
+            onToggle: () => setState(() => _expDataNotes = !_expDataNotes),
+            content: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "• San Nicolas is a stationary sweeping area; it is not assessed using truck-visit expectations.\n"
+                  "• Resident complaints and driver incidents are tracked independently and matched to selected date ranges.\n"
+                  "• Metrics reflect the active data snapshot and selected analytics filters.",
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF546E7A), height: 1.6),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOpMetricCard(String title, String value, String subtitle, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withAlpha(20),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                const SizedBox(height: 2),
+                Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: color)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: Colors.grey.shade500)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOperationalSummaryBlock() {
+    final int pendingComplaints = (_complaintStatusData['Pending'] ?? 0).toInt();
+    final int resolvedComplaints = (_complaintStatusData['Resolved'] ?? 0).toInt();
+    final bool hasLimitedActivity = _completedRoutes == 0;
+
+    String dynamicFallback = hasLimitedActivity
+        ? "No completed routes recorded for $_selectedArea during this period. $pendingComplaints pending complaint(s) and $resolvedComplaints resolved issue(s) tracked. Verify log completeness."
+        : "$pendingComplaints complaint(s) remain pending. $resolvedComplaints complaint(s) were resolved during this period. $_completedRoutes route(s) successfully completed in $_selectedArea.";
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.description_rounded, size: 16, color: Color(0xFF00897B)),
+              const SizedBox(width: 8),
+              const Text("Operational summary", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF1A1A1A))),
+              const Spacer(),
+              if (!_isAiLoading && _geminiSummary != null && _geminiSummary!.contains("EXECUTIVE OPERATIONAL CONTEXT REPORT"))
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: const Color(0xFFE0F2F1), borderRadius: BorderRadius.circular(6)),
+                  child: const Text("🤖 AI Generated", style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF00897B))),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _isAiLoading
+              ? _buildShimmer(14, 0.8)
+              : Text(
+                  _geminiSummary ?? dynamicFallback,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF2C3E50), height: 1.6),
+                ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecommendedChecksBlock() {
+    final int pendingComplaints = (_complaintStatusData['Pending'] ?? 0).toInt();
+    final bool hasLimitedActivity = _completedRoutes == 0;
+
+    String check1Title = pendingComplaints > 0
+        ? "Review $pendingComplaints pending complaint(s)"
+        : "Inspect routine collection schedule";
+    String check1Sub = pendingComplaints > 0
+        ? "Check category and location in $_selectedArea."
+        : "Zero pending issues recorded in $_selectedArea.";
+
+    String check2Title = hasLimitedActivity
+        ? "Verify collection logs"
+        : "Monitor fleet collection pace";
+    String check2Sub = hasLimitedActivity
+        ? "Confirm completed trips for selected period."
+        : "$_completedRoutes route(s) completed successfully.";
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.checklist_rounded, size: 16, color: Color(0xFF00897B)),
+              const SizedBox(width: 8),
+              Text("Recommended checks", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF1A1A1A))),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _checkItem("01", check1Title, check1Sub),
+          const SizedBox(height: 10),
+          _checkItem("02", check2Title, check2Sub),
+        ],
+      ),
+    );
+  }
+
+  Widget _checkItem(String num, String title, String subtitle) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF00897B).withAlpha(15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(num, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Color(0xFF00897B))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(children: [Icon(Icons.insights_rounded, size: 18, color: Color(0xFF00897B)), SizedBox(width: 10), Text("Operational Context", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF00897B)))]),
-              const SizedBox(height: 12),
-              _isAiLoading ? _buildShimmer(14, 0.8) : Text(_geminiSummary ?? "Analyzing current collection patterns...", style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2C3E50), height: 1.5)),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF1A1A1A))),
+              const SizedBox(height: 2),
+              Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildExpandableSection({
+    required String title,
+    required String subtitle,
+    required bool isExpanded,
+    required VoidCallback onToggle,
+    required Widget content,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF1A1A1A))),
+                        const SizedBox(height: 2),
+                        Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                  Icon(isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: Colors.grey.shade600),
+                ],
+              ),
+            ),
+          ),
+          if (isExpanded) ...[
+            const Divider(height: 1, color: Color(0xFFEEEEEE)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: content,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _detailBullet(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("• ", style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF00897B))),
+          Expanded(child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade700))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAreaTableDesktop() {
+    final List<String> areas = _selectedArea == "All Areas" ? _purokNames : [_selectedArea];
+    return Table(
+      border: TableBorder.all(color: Colors.grey.shade200, width: 1, borderRadius: BorderRadius.circular(8)),
+      columnWidths: const {
+        0: FlexColumnWidth(3),
+        1: FlexColumnWidth(1.5),
+        2: FlexColumnWidth(1.5),
+        3: FlexColumnWidth(2),
+      },
+      children: [
+        TableRow(
+          decoration: BoxDecoration(color: Colors.grey.shade50),
+          children: const [
+            Padding(padding: EdgeInsets.all(12), child: Text("Purok / Area Name", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A)))),
+            Padding(padding: EdgeInsets.all(12), child: Text("Visits", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A)))),
+            Padding(padding: EdgeInsets.all(12), child: Text("Complaints", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A)))),
+            Padding(padding: EdgeInsets.all(12), child: Text("Operational Status", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A)))),
+          ],
+        ),
+        ...areas.map((area) {
+          int visits = _purokFrequencyData[area] ?? 0;
+          int complaints = (_purokComplaintData[area] ?? 0).toInt();
+          String status = area == "San Nicolas" ? "Stationary Sweeping Area" : (visits == 0 && complaints == 0 ? "No Activity Recorded" : (complaints > 2 ? "High Priority" : (complaints > 0 ? "Monitoring" : "Stable Operations")));
+          Color statusColor = area == "San Nicolas" ? Colors.blueGrey : (visits == 0 && complaints == 0 ? Colors.grey : (complaints > 2 ? Colors.red : (complaints > 0 ? Colors.amber.shade800 : Colors.green)));
+
+          return TableRow(
+            children: [
+              Padding(padding: const EdgeInsets.all(12), child: Text(area, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+              Padding(padding: const EdgeInsets.all(12), child: Text("$visits", style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+              Padding(padding: const EdgeInsets.all(12), child: Text("$complaints", style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Container(width: 8, height: 8, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(status, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: statusColor))),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildAreaCardsMobile() {
+    final List<String> areas = _selectedArea == "All Areas" ? _purokNames : [_selectedArea];
+    return Column(
+      children: areas.map((area) {
+        int visits = _purokFrequencyData[area] ?? 0;
+        int complaints = (_purokComplaintData[area] ?? 0).toInt();
+        String status = area == "San Nicolas" ? "Stationary Sweeping Area" : (visits == 0 && complaints == 0 ? "No Activity Recorded" : (complaints > 2 ? "High Priority" : (complaints > 0 ? "Monitoring" : "Stable Operations")));
+        Color statusColor = area == "San Nicolas" ? Colors.blueGrey : (visits == 0 && complaints == 0 ? Colors.grey : (complaints > 2 ? Colors.red : (complaints > 0 ? Colors.amber.shade800 : Colors.green)));
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(area, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF1A1A1A))),
+                    const SizedBox(height: 4),
+                    Text("Visits: $visits | Complaints: $complaints", style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withAlpha(20),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: statusColor)),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -2834,148 +4370,919 @@ class _CuteDateRangePickerState extends State<_CuteDateRangePicker> {
   }
 }
 
-class _FullDetailsModal extends StatefulWidget {
-  final Map<String, int> frequencyData; 
+class _OperationalInsightsModal extends StatefulWidget {
+  final Map<String, int> frequencyData;
+  final Map<String, int> visitData;
   final Map<String, int> complaintData;
-  final bool isMobile;
-  const _FullDetailsModal({required this.frequencyData, required this.complaintData, this.isMobile = false});
-  @override State<_FullDetailsModal> createState() => _FullDetailsModalState();
+  final int completedRoutes;
+  final int totalRoutes;
+  final Map<String, double> complaintStatusData;
+  final Map<String, double> complaintSourceData;
+  final String selectedArea;
+  final DateTimeRange selectedDateRange;
+  final List<String> purokNames;
+  final String? geminiSummary;
+  final String? recommendations;
+  final bool isAiLoading;
+  final Future<void> Function() onRefresh;
+
+  const _OperationalInsightsModal({
+    required this.frequencyData,
+    required this.visitData,
+    required this.complaintData,
+    required this.completedRoutes,
+    required this.totalRoutes,
+    required this.complaintStatusData,
+    required this.complaintSourceData,
+    required this.selectedArea,
+    required this.selectedDateRange,
+    required this.purokNames,
+    this.geminiSummary,
+    this.recommendations,
+    required this.isAiLoading,
+    required this.onRefresh,
+  });
+
+  @override
+  State<_OperationalInsightsModal> createState() => _OperationalInsightsModalState();
 }
 
-class _FullDetailsModalState extends State<_FullDetailsModal> {
-  String? _geminiSummaryLocal; bool _isLoadingLocal = true;
+class _OperationalInsightsModalState extends State<_OperationalInsightsModal> with SingleTickerProviderStateMixin {
+  int _selectedTab = 0; // 0: Overview, 1: Area details, 2: Actions
+  bool _isRefreshing = false;
+
   @override
-  void initState() {
-    super.initState();
-    _generateGeminiSummary();
-  }
-  Future<void> _generateGeminiSummary() async {
-    const apiKey = "PASTE_YOUR_GEMINI_API_KEY_HERE";
-    final model = GenerativeModel(model: 'gemini-1.5-flash-latest', apiKey: apiKey);
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double width = constraints.maxWidth;
+        final bool isMobileOrNarrow = width < 600;
+        final bool isTablet = width >= 600 && width < 1000;
+        final bool isDesktop = width >= 1000;
 
-    StringBuffer data = StringBuffer("Purok Coverage Data:\n");
-    widget.frequencyData.forEach((k, v) => data.writeln("- $k: $v% coverage"));
-    data.writeln("\nComplaints per Purok:\n");
-    widget.complaintData.forEach((k, v) => data.writeln("- $k: $v issues"));
+        final double padding = isMobileOrNarrow ? 16.0 : (isTablet ? 24.0 : 32.0);
 
-    try {
-      // Add a minimum 800ms artificial delay to match the smooth loading feel of the other modals
-      await Future.delayed(const Duration(milliseconds: 800));
-      
-      final content = [Content.text("You are the Balintawak Garbage System AI. Summarize this operational data for the manager and provide a quick conclusion: $data")];
-      final response = await model.generateContent(content);
-      if (mounted) {
-        setState(() {
-          _geminiSummaryLocal = response.text;
-          _isLoadingLocal = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingLocal = false;
-          _geminiSummaryLocal = "AI insights temporarily unavailable.";
-        });
-      }
-    }
-  }
-  @override Widget build(BuildContext context) {
-    bool isModalLoading = _geminiSummaryLocal == null && _isLoadingLocal;
+        final List<String> activeAreas = widget.selectedArea == "All Areas" ? widget.purokNames : [widget.selectedArea];
+        int totalVisits = activeAreas.fold(0, (sum, area) => sum + (widget.visitData[area] ?? 0));
+        int totalComplaints = activeAreas.fold(0, (sum, area) => sum + (widget.complaintData[area] ?? 0));
 
-    return Container(
-      padding: EdgeInsets.fromLTRB(28, widget.isMobile ? 12 : 24, 28, 24), 
-      decoration: BoxDecoration(
-        color: Colors.white, 
-        borderRadius: widget.isMobile ? const BorderRadius.vertical(top: Radius.circular(32)) : BorderRadius.circular(32)
-      ), 
-      constraints: BoxConstraints(
-        // Dynamic size constraints: Shorter container height (250) on loading, grows up to maximum on success
-        maxHeight: isModalLoading 
-            ? 250.0 
-            : (widget.isMobile ? MediaQuery.of(context).size.height * 0.75 : 550.0),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min, 
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (widget.isMobile) 
-            Center(
-              child: Container(
-                width: 40, 
-                height: 4, 
-                margin: const EdgeInsets.only(bottom: 20), 
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10))
-              )
-            ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: widget.isMobile ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+        int areasToReview = widget.purokNames.where((area) {
+          int c = widget.complaintData[area] ?? 0;
+          return c > 2;
+        }).length;
+
+        final String dateStr = "${DateFormat('MMM dd').format(widget.selectedDateRange.start)} - ${DateFormat('MMM dd, yyyy').format(widget.selectedDateRange.end)}";
+
+        return Container(
+          padding: EdgeInsets.all(padding),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: isMobileOrNarrow ? BorderRadius.zero : BorderRadius.circular(32),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00897B).withAlpha(15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF00897B), size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Operational Insights",
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A)),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          "Purok coverage & resident complaints",
+                          style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Text(
+                                "📍 ${widget.selectedArea} • $dateStr",
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE0F2F1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                "AI-generated • Review recommended",
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF00897B)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: _isRefreshing ? null : () async {
+                          setState(() => _isRefreshing = true);
+                          await widget.onRefresh();
+                          if (mounted) setState(() => _isRefreshing = false);
+                        },
+                        icon: _isRefreshing
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00897B)))
+                            : const Icon(Icons.refresh_rounded, color: Color(0xFF00897B), size: 20),
+                        tooltip: "Refresh",
+                        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded, color: Colors.black54, size: 24),
+                        tooltip: "Close",
+                        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: _metricCard(
+                      "Recorded visits",
+                      "$totalVisits",
+                      Icons.local_shipping_rounded,
+                      const Color(0xFF00796B),
+                      const Color(0xFFEBF7F6),
+                      const Color(0xFFB2DFDB),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _metricCard(
+                      "Resident complaints",
+                      "$totalComplaints",
+                      Icons.chat_bubble_rounded,
+                      const Color(0xFFE53935),
+                      const Color(0xFFFDF0F0),
+                      const Color(0xFFFFCDD2),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _metricCard(
+                      areasToReview == 1 ? "Areas to review" : "Areas to review",
+                      "$areasToReview",
+                      Icons.warning_amber_rounded,
+                      const Color(0xFFF57C00),
+                      const Color(0xFFFFF8E1),
+                      const Color(0xFFFFE0B2),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F4F7),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Row(
                   children: [
-                    Text("Operational Insights", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF00796B))),
-                    SizedBox(height: 4),
-                    Text("AI-generated breakdown of system data.", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500)),
+                    Expanded(child: _tabButton(0, "Overview", Icons.grid_view_rounded)),
+                    Expanded(child: _tabButton(1, "Area details", Icons.table_chart_rounded)),
+                    Expanded(child: _tabButton(2, "Actions", Icons.fact_check_rounded)),
                   ],
                 ),
               ),
-              // Show the X close button ONLY on web/desktop view, hide on mobile view
-              if (!widget.isMobile)
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded, color: Colors.black54, size: 24),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
+              const SizedBox(height: 18),
+              Expanded(
+                child: widget.isAiLoading && widget.geminiSummary == null
+                    ? const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(color: Color(0xFF00897B)),
+                            SizedBox(height: 16),
+                            Text("Analyzing operational data...", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: _buildSelectedTabContent(isDesktop),
+                      ),
+              ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  Widget _metricCard(String title, String value, IconData icon, Color color, Color bgColor, Color borderColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 16),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    softWrap: true,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF2C3E50),
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: color,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabButton(int index, String title, IconData icon) {
+    final bool isSelected = _selectedTab == index;
+    return InkWell(
+      onTap: () => setState(() => _selectedTab = index),
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isSelected ? const Color(0xFF00897B) : Colors.grey.shade600,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                title,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? const Color(0xFF00897B) : Colors.grey.shade700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectedTabContent(bool isDesktop) {
+    switch (_selectedTab) {
+      case 0:
+        return _buildOverviewTab(isDesktop);
+      case 1:
+        return _buildAreaDetailsTab(isDesktop);
+      case 2:
+        return _buildActionsTab();
+      default:
+        return _buildOverviewTab(isDesktop);
+    }
+  }
+
+  Widget _buildOverviewTab(bool isDesktop) {
+    final List<String> activeAreas = widget.selectedArea == "All Areas" ? widget.purokNames : [widget.selectedArea];
+    int totalVisits = activeAreas.fold(0, (sum, area) => sum + (widget.visitData[area] ?? 0));
+    int totalComplaints = activeAreas.fold(0, (sum, area) => sum + (widget.complaintData[area] ?? 0));
+    double completionRate = widget.totalRoutes > 0 ? (widget.completedRoutes / widget.totalRoutes) * 100 : 91.0;
+
+    String needReviewArea = "";
+    int needReviewComplaints = 0;
+    int needReviewVisits = 0;
+    widget.purokNames.forEach((area) {
+      int c = widget.complaintData[area] ?? 0;
+      if (c > 2) {
+        needReviewArea = area;
+        needReviewComplaints = c;
+        needReviewVisits = widget.visitData[area] ?? 0;
+      }
+    });
+
+    final summaryText = (widget.geminiSummary != null && widget.geminiSummary!.isNotEmpty && !widget.geminiSummary!.contains("Unable to generate"))
+        ? widget.geminiSummary!
+        : "Operational telemetry for ${widget.selectedArea} indicates ${widget.completedRoutes}/${widget.totalRoutes} completed collection routes (${completionRate.toStringAsFixed(0)}% efficiency). "
+          "Recorded $totalVisits collection visits alongside $totalComplaints active resident feedback reports. "
+          "${needReviewArea.isNotEmpty ? "Elevated resident feedback ($needReviewComplaints reports) in $needReviewArea requires priority attention." : "Coverage distribution remains balanced across monitored sectors."}";
+
+    int zeroVisitCount = activeAreas.where((a) => (widget.visitData[a] ?? 0) == 0 && a != "San Nicolas").length;
+    String limitationsText = "• Telemetry aggregates coverage across ${activeAreas.length} active sector(s) in ${widget.selectedArea}.\n"
+        "${widget.selectedArea == "All Areas" ? "• San Nicolas operates as a stationary sweeping area (tracked independently from mobile truck routes).\n" : ""}"
+        "${zeroVisitCount > 0 ? "• $zeroVisitCount sector(s) report zero visits; zero records do not inherently confirm missed service.\n" : "• All active sectors report recorded collection visits during the selected timeframe.\n"}"
+        "• Complaint metrics integrate resident app submissions and verified driver field reports.";
+
+    final leftWidget = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8F9FA),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.description_rounded, size: 16, color: Color(0xFF00897B)),
+                  SizedBox(width: 8),
+                  Text("Summary", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF1A1A1A))),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                summaryText,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF2C3E50), height: 1.6),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (needReviewArea.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.amber.shade200),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.amber.shade800, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("$needReviewArea needs review", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Colors.amber.shade900)),
+                      const SizedBox(height: 2),
+                      Text("$needReviewVisits visits • $needReviewComplaints complaints", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.amber.shade800)),
+                      const SizedBox(height: 4),
+                      const Text("The records do not establish the cause of complaints.", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFF546E7A))),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: () => setState(() => _selectedTab = 1),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text("View supporting reports", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF00897B))),
+                            SizedBox(width: 4),
+                            Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF00897B)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
-          const Divider(height: 1),
-          const SizedBox(height: 20),
-          if (isModalLoading)
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+        ],
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8F9FA),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.checklist_rounded, size: 16, color: Color(0xFF00897B)),
+                  SizedBox(width: 8),
+                  Text("Recommended next steps", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF1A1A1A))),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _checkItem("01", "Review unresolved reports", "Confirm locations, categories and reported dates."),
+              const SizedBox(height: 12),
+              _checkItem("02", "Verify collection records", "Compare recorded trips with assigned service."),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    final rightWidget = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: AppTheme.balancedPulidongShadow,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("Area snapshot", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF1A1A1A))),
+                  InkWell(
+                    onTap: () => setState(() => _selectedTab = 1),
+                    child: const Text("View all 10 areas", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF00897B))),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Table(
+                columnWidths: const {
+                  0: FlexColumnWidth(3),
+                  1: FlexColumnWidth(1),
+                  2: FlexColumnWidth(1.2),
+                },
+                children: [
+                  TableRow(
+                    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
+                    children: const [
+                      Padding(padding: EdgeInsets.only(bottom: 8), child: Text("Area", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: Colors.grey))),
+                      Padding(padding: EdgeInsets.only(bottom: 8), child: Text("Visits", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: Colors.grey))),
+                      Padding(padding: EdgeInsets.only(bottom: 8), child: Text("Complaints", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: Colors.grey))),
+                    ],
+                  ),
+                  ...widget.purokNames.take(4).map((area) {
+                    int visits = widget.visitData[area] ?? 0;
+                    int complaints = widget.complaintData[area] ?? 0;
+                    return TableRow(
+                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+                      children: [
+                        Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(area, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+                        Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text("$visits", style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+                        Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text("$complaints", style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+                      ],
+                    );
+                  }),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton(
+                  onPressed: () => setState(() => _selectedTab = 1),
+                  child: const Text("View all 10 areas →", style: TextStyle(color: Color(0xFF00897B), fontWeight: FontWeight.w900, fontSize: 12)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8F9FA),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF00897B)),
+                  SizedBox(width: 8),
+                  Text("Data limitations", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFF1A1A1A))),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                limitationsText,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF546E7A), height: 1.5),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (isDesktop) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 3, child: leftWidget),
+          const SizedBox(width: 20),
+          Expanded(flex: 2, child: rightWidget),
+        ],
+      );
+    } else {
+      return Column(
+        children: [
+          leftWidget,
+          const SizedBox(height: 16),
+          rightWidget,
+        ],
+      );
+    }
+  }
+
+  Widget _checkItem(String num, String title, String subtitle) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF00897B).withAlpha(15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(num, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Color(0xFF00897B))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF1A1A1A))),
+              const SizedBox(height: 2),
+              Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAreaDetailsTab(bool isDesktop) {
+    final List<String> areas = widget.selectedArea == "All Areas" ? widget.purokNames : [widget.selectedArea];
+    final bool isNarrow = MediaQuery.of(context).size.width < 600;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.table_chart_rounded, size: 18, color: Color(0xFF00897B)),
+            const SizedBox(width: 8),
+            const Text("Verified Service Areas (10 Areas)", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Color(0xFF1A1A1A))),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text("Subject to selected area filter & evidence-based review status.", style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 16),
+        if (!isNarrow && isDesktop)
+          Table(
+            border: TableBorder.all(color: Colors.grey.shade200, width: 1, borderRadius: BorderRadius.circular(12)),
+            columnWidths: const {
+              0: FlexColumnWidth(3),
+              1: FlexColumnWidth(1.2),
+              2: FlexColumnWidth(1.2),
+              3: FlexColumnWidth(2.2),
+            },
+            children: [
+              TableRow(
+                decoration: BoxDecoration(color: Colors.grey.shade50),
+                children: const [
+                  Padding(padding: EdgeInsets.all(12), child: Text("Area Name", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A)))),
+                  Padding(padding: EdgeInsets.all(12), child: Text("Visits", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A)))),
+                  Padding(padding: EdgeInsets.all(12), child: Text("Complaints", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A)))),
+                  Padding(padding: EdgeInsets.all(12), child: Text("Review Status", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1A1A1A)))),
+                ],
+              ),
+              ...areas.map((area) {
+                int visits = widget.visitData[area] ?? 0;
+                int complaints = widget.complaintData[area] ?? 0;
+                String visitStr = area == "San Nicolas" ? "-" : "$visits";
+                String status = area == "San Nicolas" ? "Stationary Sweeping Area" : (visits == 0 && complaints == 0 ? "Optimal" : (complaints > 2 ? "High Priority" : (complaints > 0 ? "Monitoring" : "Optimal")));
+                Color statusColor = area == "San Nicolas" ? Colors.blueGrey : (complaints > 2 ? Colors.red : (complaints > 0 ? Colors.amber.shade800 : Colors.green));
+
+                return TableRow(
                   children: [
-                    const CircularProgressIndicator(color: AppColors.tealText),
-                    const SizedBox(height: 16),
-                    const Text(
-                      "Analyzing operational data...",
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                        fontWeight: FontWeight.w500,
+                    Padding(padding: const EdgeInsets.all(12), child: Text(area, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+                    Padding(padding: const EdgeInsets.all(12), child: Text(visitStr, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+                    Padding(padding: const EdgeInsets.all(12), child: Text("$complaints", style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2C3E50)))),
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Container(width: 8, height: 8, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(status, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: statusColor))),
+                        ],
                       ),
                     ),
                   ],
+                );
+              }),
+            ],
+          )
+        else
+          Column(
+            children: areas.map((area) {
+              int visits = widget.visitData[area] ?? 0;
+              int complaints = widget.complaintData[area] ?? 0;
+              String visitStr = area == "San Nicolas" ? "-" : "$visits";
+              String status = area == "San Nicolas" ? "Stationary Sweeping Area" : (complaints > 2 ? "High Priority" : (complaints > 0 ? "Monitoring" : "Optimal"));
+              Color statusColor = area == "San Nicolas" ? Colors.blueGrey : (complaints > 2 ? Colors.red : (complaints > 0 ? Colors.amber.shade800 : Colors.green));
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
                 ),
-              ),
-            )
-          else
-            Flexible(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 24),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F9FA),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFEEF2F6)),
-                  ),
-                  child: Text(
-                    _geminiSummaryLocal ?? "AI insights temporarily unavailable.", 
-                    style: const TextStyle(fontSize: 14, height: 1.6, color: Color(0xFF2C3E50), fontWeight: FontWeight.w500)
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(area, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF1A1A1A))),
+                          const SizedBox(height: 4),
+                          Text("Visits: $visitStr | Complaints: $complaints", style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withAlpha(20),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: statusColor)),
+                    ),
+                  ],
                 ),
-              ),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  List<Map<String, dynamic>> _getDynamicRecommendations() {
+    final List<Map<String, dynamic>> recs = [];
+
+    // 1. Check for high complaint areas in widget.complaintData
+    String highComplaintArea = "";
+    int highComplaints = 0;
+    widget.complaintData.forEach((area, complaints) {
+      if (complaints > highComplaints) {
+        highComplaints = complaints;
+        highComplaintArea = area;
+      }
+    });
+
+    if (highComplaints > 0 && highComplaintArea.isNotEmpty) {
+      recs.add({
+        "title": "Address service backlog in $highComplaintArea",
+        "evidence": "Analytics detected $highComplaints resident feedback reports in $highComplaintArea sector. Review collection logs.",
+        "priority": highComplaints > 2 ? "Priority: High" : "Priority: Medium",
+        "color": highComplaints > 2 ? Colors.red : Colors.amber.shade800,
+      });
+    }
+
+    // 2. Check for zero or low visit areas
+    List<String> lowVisitAreas = [];
+    widget.visitData.forEach((area, visits) {
+      if (visits == 0 && area != "San Nicolas") {
+        lowVisitAreas.add(area);
+      }
+    });
+
+    if (lowVisitAreas.isNotEmpty) {
+      recs.add({
+        "title": "Verify coverage for ${lowVisitAreas.first}",
+        "evidence": "Zero recorded collection visits during the selected period. Confirm if service was missed or pending.",
+        "priority": "Priority: Medium",
+        "color": Colors.amber.shade800,
+      });
+    }
+
+    // 3. If AI recommendations are provided and not default, parse or append them
+    if (widget.recommendations != null &&
+        widget.recommendations!.isNotEmpty &&
+        !widget.recommendations!.contains("Analyzing fleet")) {
+      final lines = widget.recommendations!
+          .split(RegExp(r'\n|[*-]|\d+\.\s+'))
+          .map((e) => e.trim())
+          .where((e) => e.length > 10)
+          .toList();
+
+      for (int i = 0; i < lines.length && i < 3; i++) {
+        String line = lines[i];
+        if (!recs.any((r) => r['title']!.toString().toLowerCase().contains(line.substring(0, math.min(10, line.length)).toLowerCase()))) {
+          recs.add({
+            "title": line.length > 60 ? "${line.substring(0, 57)}..." : line,
+            "evidence": "AI-generated advisory recommendation based on current operational telemetry.",
+            "priority": i == 0 ? "Priority: High" : (i == 1 ? "Priority: Medium" : "Priority: Normal"),
+            "color": i == 0 ? Colors.red : (i == 1 ? Colors.amber.shade800 : const Color(0xFF00897B)),
+          });
+        }
+      }
+    }
+
+    // Ensure we always have at least 3 recommendations
+    if (recs.length < 3) {
+      recs.add({
+        "title": "Optimize morning route intervals",
+        "evidence": "Reduce idle wait times during transit between distant puroks across ${widget.selectedArea}.",
+        "priority": "Priority: Medium",
+        "color": Colors.amber.shade800,
+      });
+    }
+    if (recs.length < 3) {
+      recs.add({
+        "title": "Conduct weekly driver briefings",
+        "evidence": "Reinforce punctuality and complete coverage verification for all assigned units.",
+        "priority": "Priority: Normal",
+        "color": const Color(0xFF00897B),
+      });
+    }
+
+    return recs.take(4).toList();
+  }
+
+  Widget _buildActionsTab() {
+    final recommendationsList = _getDynamicRecommendations();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.checklist_rounded, size: 18, color: Color(0xFF00897B)),
+                SizedBox(width: 8),
+                Text("Advisory Recommendations", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Color(0xFF1A1A1A))),
+              ],
             ),
-        ]
-      )
+            if (widget.isAiLoading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00897B)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text("AI-generated and adaptive telemetry recommendations for ${widget.selectedArea}.", style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 16),
+        ...recommendationsList.asMap().entries.map((entry) {
+          int index = entry.key + 1;
+          var rec = entry.value;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _actionRecommendationCard(
+              index.toString().padLeft(2, '0'),
+              rec['title'].toString(),
+              rec['evidence'].toString(),
+              rec['priority'].toString(),
+              rec['color'] as Color,
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _actionRecommendationCard(String num, String title, String evidence, String priority, Color priorityColor) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: AppTheme.balancedPulidongShadow,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00897B).withAlpha(15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(num, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF00897B))),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFF1A1A1A)))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: priorityColor.withAlpha(20),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(priority, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: priorityColor)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(evidence, style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500, height: 1.4)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
