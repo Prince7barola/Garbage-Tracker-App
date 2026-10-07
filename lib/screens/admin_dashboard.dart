@@ -19,6 +19,7 @@ import 'complaints_screen.dart';
 import 'admin_settings_screen.dart';
 import 'data_management_screen.dart';
 import 'user_management_screen.dart';
+import 'route_history_screen.dart';
 import '../widgets/mapbox_view.dart';
 import '../services/admin_settings_service.dart';
 import '../services/notification_service.dart';
@@ -674,6 +675,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                       UserManagementScreen(isEmbedded: true, onBack: () { _refreshAllStats(); if (mounted) setState(() => _selectedIndex = 0); }),
                       DataManagementScreen(isEmbedded: true, onBack: () { _refreshAllStats(); if (mounted) setState(() => _selectedIndex = 0); }),
                       AdminSettingsScreen(isEmbedded: true, onBack: () { _refreshAllStats(); if (mounted) setState(() => _selectedIndex = 0); }),
+                      RouteHistoryScreen(isEmbedded: true, onBack: () { _refreshAllStats(); if (mounted) setState(() => _selectedIndex = 0); }),
                     ],
                   ),
                 ),
@@ -799,6 +801,8 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                       _buildSidebarItem(Icons.storage_rounded, "Database Center", 5),
                       const SizedBox(height: 8),
                       _buildSidebarItem(Icons.settings_suggest_rounded, "System Settings", 6),
+                      const SizedBox(height: 8),
+                      _buildSidebarItem(Icons.route_rounded, "Driver Route History", 7),
                     ],
                   ),
                 ),
@@ -998,6 +1002,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                       _buildDrawerItem(Icons.chat_bubble_rounded, "Incident Reports", 3),
                       _buildDrawerItem(Icons.people_outline_rounded, "User Accounts", 4),
                       _buildDrawerItem(Icons.storage_rounded, "Data Management", 5),
+                      _buildDrawerItem(Icons.route_rounded, "Route History", 7),
                     ],
                   ),
                 ),

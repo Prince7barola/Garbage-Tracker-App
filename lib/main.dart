@@ -20,6 +20,7 @@ import 'screens/forgot_password_screen.dart';
 import 'screens/verify_2fa_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/standalone_gis_web_screen.dart';
+import 'screens/route_history_screen.dart';
 
 void main() async {
   // Trigger Rebuild
@@ -137,6 +138,7 @@ class MyApp extends StatelessWidget {
         '/complaints': (context) => const ComplaintsScreen(),
         '/analytics': (context) => const AnalyticsScreen(),
         '/user_management': (context) => const UserManagementScreen(),
+        '/route_history': (context) => const RouteHistoryScreen(),
         '/file_complaint': (context) => const FileComplaintScreen(),
         '/track_trucks': (context) => const ResidentTrackTruckScreen(),
         '/forgot_password': (context) => const ForgotPasswordScreen(),

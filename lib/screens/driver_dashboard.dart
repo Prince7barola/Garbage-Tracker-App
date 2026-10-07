@@ -24,6 +24,8 @@ import '../widgets/hover_action_button.dart';
 import '../widgets/fade_slide_entrance.dart';
 import '../widgets/data_management_modal.dart';
 import '../widgets/custom_snackbar.dart';
+import '../api/api_service.dart';
+import 'route_history_screen.dart';
 
 class DriverDashboard extends StatefulWidget {
   const DriverDashboard({super.key});
@@ -34,6 +36,7 @@ class DriverDashboard extends StatefulWidget {
 
 class _DriverDashboardState extends State<DriverDashboard> with TickerProviderStateMixin {
   final FirebaseDatabase _database = FirebaseDatabase.instance;
+  final ApiService _apiService = ApiService();
   UserData? _user;
   String _status = "OFFLINE";
   String _startTime = "--:--";
@@ -1785,6 +1788,21 @@ class _DriverDashboardState extends State<DriverDashboard> with TickerProviderSt
         if (_currentPosition != null) {
           _appendRoutePoint(_currentPosition!, "FINISHED", "BLACK");
         }
+
+        try {
+          _apiService.saveTripHistory({
+            'trip_id': finalSessionId,
+            'driver_id': _user?.userId,
+            'driver_name': _user?.name ?? 'Driver',
+            'truck_id': truckId,
+            'route_name': 'Collection Route',
+            'route_status': 'COMPLETED',
+            'end_time': DateTime.now().toIso8601String(),
+            'finish_lat': _currentPosition?.latitude,
+            'finish_lng': _currentPosition?.longitude,
+            'total_distance_km': _distance,
+          });
+        } catch (_) {}
 
         // Apply Maintenance Deduction
         final sessionRef = _database.ref('driver_routes').child(finalSessionId);
@@ -3671,94 +3689,14 @@ class _DriverDashboardState extends State<DriverDashboard> with TickerProviderSt
     );
   }
 
-  void _showDailyRoutes() async {
-    if (_user == null) return;
-    if (_isNavigating) return;
-    setState(() => _isNavigating = true);
-
-    try {
-      _showStyledBottomSheet(
-        title: "Daily Routes",
-        description: "View and track your assigned collection paths for the day.",
-        loadingText: "Loading collection routes...",
-        bottomPadding: 20,
-        children: [
-          StreamBuilder(
-            stream: _database.ref('driver_routes').orderByChild('driver_id').equalTo(_user?.userId).onValue,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) return Text("Error: ${snapshot.error}");
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.tealText)));
-              }
-              if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                return const Center(child: Padding(padding: EdgeInsets.all(40), child: Text("No assigned routes found.", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold))));
-              }
-              
-              final Map data = snapshot.data!.snapshot.value as Map;
-              final List routes = [];
-              data.forEach((k, v) => routes.add({...v as Map, 'id': k}));
-              routes.sort((a, b) => (b['created_at'] ?? 0).compareTo(a['created_at'] ?? 0));
-
-              return ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: routes.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, i) {
-                  final r = routes[i];
-                  String status = (r['route_status'] ?? "PENDING").toString().toUpperCase();
-                  Color statusColor = status == "COMPLETED" ? Colors.green : Colors.blue;
-
-                  return Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white, 
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 10, offset: const Offset(0, 4))],
-                      border: Border.all(color: Colors.grey.shade300, width: 1.5)
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              r['route_date'] ?? "Current Route", 
-                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.grey)
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                              child: Text(status, style: TextStyle(color: statusColor, fontWeight: FontWeight.w900, fontSize: 10)),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          r['route_name'] ?? "Morning Collection", 
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF2C3E50))
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(Icons.route_rounded, size: 14, color: Colors.grey),
-                            const SizedBox(width: 6),
-                            Text("${r['total_distance_km'] ?? '0.0'} km covered", style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              );
-            },
-          )
-        ],
-      );
-    } finally {
-      if (mounted) setState(() => _isNavigating = false);
-    }
+  void _showDailyRoutes() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const RouteHistoryScreen(),
+      ),
+    );
+  }
   }
 
   void _showReportIssue() async {

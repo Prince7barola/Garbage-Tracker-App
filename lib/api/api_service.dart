@@ -314,4 +314,33 @@ class ApiService {
       'is_archived': archive ? 1 : 0,
     });
   }
+
+  // --- Driver Route History API ---
+
+  Future<Response> getDriverRouteHistory({
+    String? startDate,
+    String? endDate,
+    String? driverId,
+    String? truckId,
+    String? area,
+    String? status,
+  }) async {
+    final Map<String, dynamic> queryParams = {};
+    if (startDate != null && startDate.isNotEmpty) queryParams['start_date'] = startDate;
+    if (endDate != null && endDate.isNotEmpty) queryParams['end_date'] = endDate;
+    if (driverId != null && driverId.isNotEmpty) queryParams['driver_id'] = driverId;
+    if (truckId != null && truckId.isNotEmpty) queryParams['truck_id'] = truckId;
+    if (area != null && area.isNotEmpty) queryParams['area'] = area;
+    if (status != null && status.isNotEmpty) queryParams['status'] = status;
+
+    return await _dio.get('get_driver_route_history.php', queryParameters: queryParams);
+  }
+
+  Future<Response> getTripDetails(String tripId) async {
+    return await _dio.get('get_trip_details.php', queryParameters: {'trip_id': tripId});
+  }
+
+  Future<Response> saveTripHistory(Map<String, dynamic> tripData) async {
+    return await _dio.post('save_trip_history.php', data: tripData);
+  }
 }
